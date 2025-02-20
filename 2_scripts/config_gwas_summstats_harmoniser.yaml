@@ -1,0 +1,34 @@
+#Add any additional input_tsv_gz paths below
+
+input_tsv_gz_files:
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/HCM/Tadros24/nonMTAG/tadros24_hcm.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/bmi/sidorenko24/sidorenko24_bmi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/waist-hip-ratio/pulit18/pulit18_whr.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/t2d/sakaue21/sakaue21_t2d.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/smoking_initiation/liu19/liu19_SmokingInitiation.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/alcohol/liu19/liu19_DrinksPerWeek.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/crp/koskeridis22/koskeridis22_crp.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/af/miyazawa23/miyazawa23_af.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/HF/levin22/levin22_hf.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/qt_interval/hoffmann22/hoffmann22_QTinterval.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/pr_interval/ntalla20/ntalla20_PRinterval.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/pwave_duration/choi21/choi21_PwaveDuration.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/qrs_interval/choi21/choi21_QRSinterval.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/qtc_interval/choi21/choi21_QTcInterval.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/rr_interval/choi21/choi21_RRinterval.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/t1_time/nauffal24/nauffal24_t1time.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/long_dsr/thanaj22/thanaj22_longdsr.tsv.gz 
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/radial_dsr/thanaj22/thanaj22_radialdsr.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/maxLAVi/thanaj22/thanaj22_maxLAVi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/RAfrac_change/pirrucello22/pirrucello22_rafac.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/maxRAAi/pirrucello22/pirrucello22_maxRAAi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/minRAAi/pirrucello22/pirrucello22_minRAAi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvef/pirrucello22/pirrucello22_rvef.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvedvi/pirrucello22/pirrucello22_rvedvi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvesvi/pirrucello22/pirrucello22_rvesvi.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvsvi/pirrucello22/pirrucello22_rvsvi.tsv.gz
+
+#These refer to fixed parameters
+gwas_summstats_harmoniser_ref_folder: '/well/PROCARDIS/jchan/bin/gwas-sumstats-harmoniser/reference_files/'
+base_output_folder: '/well/PROCARDIS/jchan/MultiPheno_HCM_MR/2_scripts/'  #By default, Nextflow outputs all files to a folder in the current working dir
+desired_output_folder: '/well/PROCARDIS/jchan/MultiPheno_HCM_MR/3_output/'

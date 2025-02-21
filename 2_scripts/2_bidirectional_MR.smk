@@ -5,8 +5,8 @@ Date: 2025-02-20
 
 rule all:
     input: 
-     config['output_path']+config['d1_exposure']+'_to_'+config['d1_outcome']+'/'+config['d1_exposure']+'_mr_results.tsv',
-     config['output_path']+config['d2_exposure']+'_to_'+config['d2_outcome']+'/'+config['d2_exposure']+'_mr_results.tsv'
+     config['output_path']+config['d1_exposure']+'_to_'+config['d1_outcome']+'/'+config['d1_exposure']+'_mr_results_mainline.tsv',
+     config['output_path']+config['d2_exposure']+'_to_'+config['d2_outcome']+'/'+config['d2_exposure']+'_mr_results_mainline.tsv'
 
 rule direction1_mr:
     input:
@@ -23,7 +23,7 @@ rule direction1_mr:
     resources:
         mem_mb = 32000
     output:
-        tsv_output = config['output_path']+config['d1_exposure']+'_to_'+config['d1_outcome']+'/'+config['d1_exposure']+'_mr_results.tsv'
+        tsv_output = config['output_path']+config['d1_exposure']+'_to_'+config['d1_outcome']+'/'+config['d1_exposure']+'_mr_results_mainline.tsv'
     shell:
         '''
         module purge 
@@ -45,7 +45,7 @@ rule direction2_mr:
         ld_eur_bed_file = config['ld_eur_bed_file'],
         plink_binary_path = config['plink_binary_path']
     output:
-        tsv_output = config['output_path']+config['d2_exposure']+'_to_'+config['d2_outcome']+'/'+config['d2_exposure']+'_mr_results.tsv'
+        tsv_output = config['output_path']+config['d2_exposure']+'_to_'+config['d2_outcome']+'/'+config['d2_exposure']+'_mr_results_mainline.tsv'
     resources:
         mem_mb = 32000
     shell:

@@ -88,7 +88,7 @@ rule summarise_harmonisation:
             basename = os.path.basename(log_file).split('_gwas_ssf')[0]
             with open(log_file, 'r') as f:
                 lines = f.readlines()
-                success = any("Result  SUCCESS_HARMONIZATION" in line for line in lines)
+                success = any("Result\tSUCCESS_HARMONIZATION" in line for line in lines)
                 if success:
                     for i, line in enumerate(lines):
                         if "sites successfully harmonised." in line:

@@ -3,3 +3,4 @@
 *.Rproj
 .Rhistory
 /1_data/gwas_associations/*
+/3_output/2_MR/*

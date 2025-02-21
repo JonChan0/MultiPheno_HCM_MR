@@ -64,11 +64,11 @@ if(selected_exposure_snps_string !='FALSE'){
 tic()
 print('Importing the exposure GWAS summary statistics')
 
-if(str_detect(selected_exposure_snps, 'tsv')){ #i.e if a file path is passed instead of a list of SNPs
+if(any(str_detect(selected_exposure_snps, 'tsv'))){ #i.e if a file path is passed instead of a list of SNPs
   selected_exposure_snps <- read_tsv(selected_exposure_snps) %>%
     filter(`P-VALUE` <= 5 * 10^-8) #Filter for only GWS SNPs in the passed in file
   selected_exposure_snps <- selected_exposure_snps$SNPS
-} else if (str_detect(selected_exposure_snps, 'csv')){
+} else if (any(str_detect(selected_exposure_snps, 'csv'))){
   selected_exposure_snps <- read_csv(selected_exposure_snps) %>% 
     filter(pValue <= 5 * 10^-8) #Filter for only GWS SNPs in the passed in file
   selected_exposure_snps <- selected_exposure_snps$dbSNP

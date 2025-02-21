@@ -3,7 +3,7 @@
 input_tsv_gz_files:
   - /well/PROCARDIS/jchan/misc/gwas_summstats/HCM/Tadros24/nonMTAG/tadros24_hcm.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/bmi/sidorenko24/sidorenko24_bmi.tsv.gz
-  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/waist-hip-ratio/pulit18/pulit18_whr.tsv.gz
+  # - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/waist-hip-ratio/pulit18/pulit18_whr.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/t2d/sakaue21/sakaue21_t2d.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/smoking_initiation/liu19/liu19_SmokingInitiation.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/alcohol/liu19/liu19_DrinksPerWeek.tsv.gz

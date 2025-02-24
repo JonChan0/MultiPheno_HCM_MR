@@ -44,7 +44,7 @@ variables <- variables %>%
   mutate(d1_exposure = case_when(
     d1_exposure %in% c('crp', 'hf','af','t2d','rvef','rvedvi','rvesvi','rvsvi')~ str_to_upper(d1_exposure),
     d1_exposure == 'rafac' ~ 'RA_Frac_Change',
-    d1_exposure =='t1time' ~ 'T1_Time',
+    d1_exposure =='t1time' ~ 'T1time',
     T~d1_exposure)) %>%
   mutate(d2_outcome = case_when(
     d2_outcome %in% c('crp', 'hf','af','t2d','rvef','rvedvi','rvesvi','rvsvi')~ str_to_upper(d1_exposure),

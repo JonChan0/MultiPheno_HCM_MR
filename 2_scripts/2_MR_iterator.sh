@@ -11,7 +11,7 @@ echo $(date)
 for file in ../1_data/input_configs/*.yaml
 do
     echo "Carrying out bidirectional MR on ${file}"
-    snakemake --profile bmrc_profile_smk5  --snakefile 2_bidirectional_MR.smk --configfile $file
+    snakemake --profile bmrc_profile_smk5  --snakefile 2_bidirectional_MR.smk --configfile $file --rerun-incomplete
 done
 
 

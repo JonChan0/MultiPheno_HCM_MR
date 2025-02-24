@@ -4,3 +4,4 @@
 .Rhistory
 /1_data/gwas_associations/*
 /3_output/2_MR/*
+3_output/harmonisation_summary.tsv

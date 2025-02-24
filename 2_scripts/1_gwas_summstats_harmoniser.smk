@@ -90,10 +90,7 @@ rule summarise_harmonisation:
                 lines = f.readlines()
                 success = any("Result\tSUCCESS_HARMONIZATION" in line for line in lines)
                 if success:
-                    for i, line in enumerate(lines):
-                        if "sites successfully harmonised." in line:
-                            percentage_line = lines[i-1].strip()
-                            break
+                    percentage_line =  [line for line in lines if 'sites successfully harmonised' in line]
                     summary_data.append(f"{basename}\tYes\t({percentage_line})")
                 else:
                     summary_data.append(f"{basename}\tNo\t(N/A)")

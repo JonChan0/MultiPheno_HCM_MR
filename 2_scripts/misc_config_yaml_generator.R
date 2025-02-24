@@ -23,8 +23,10 @@ phenos2 <- str_match(phenos, '_([A-Za-z_\\d]+)_gwas_ssf')[,2]
 d1_outcome <- 'HCM'
 d2_exposure <- 'HCM'
 d1_outcome_path <- d2_exposure_path <- 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-d2_instruments <- "rs1048302,rs3845778,rs4894803,rs2191446,rs11748963,rs3176326,rs12210733,rs66520020,rs2177843,rs11196085,rs17617337,rs182427065,rs41306688,rs8006225,rs8033459,rs28768976,rs7210446,rs2644262,rs5760054"
+d2_instruments <- "rs1048302,rs11687178,rs3845778,rs2540277,rs6747402,rs7612736,rs4894803,rs2191446,rs11748963,rs3176326,rs12210733,rs66520020,rs7824244,rs35006907,rs2645210,rs2177843,rs11196085,rs17617337,rs12270374,rs182427065,rs7487962,rs41306688,rs113907726,rs8006225,rs8033459,rs28768976,rs7210446,rs2644262,rs6566955,rs12460541,rs62222424,rs5760054"
 d2_ld_clump <- F
+
+print(str_c('Number of HCM instruments = ', length(str_split(d2_instruments,',')[[1]])))
 
 #Define the variable phenotype related
 d1_exposure_path <- str_c(str_match(phenos, '([A-Za-z_\\d]+)_gwas_ssf')[,2],'_gwas_ssf/final/',str_match(phenos, '([A-Za-z_\\d]+)_gwas_ssf')[,2],'_gwas_ssf.h.tsv.gz')

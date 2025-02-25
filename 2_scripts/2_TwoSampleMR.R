@@ -169,7 +169,7 @@ print('Running MR')
 if(nrow(harmonised_data)==1){
   mainline_mr_method_list <- c('mr_wald_ratio')
 } else {
-  mainline_mr_method_list <- c('mr_ivw'))
+  mainline_mr_method_list <- c('mr_ivw')
 }
 mainline_mr_results <- mr(harmonised_data, method_list=mainline_mr_method_list) #Runs MR with a bunch of different methods- call mr_method_list() to see\
 

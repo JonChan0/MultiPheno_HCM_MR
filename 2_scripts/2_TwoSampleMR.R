@@ -58,6 +58,15 @@ if(selected_exposure_snps_string !='FALSE'){
 # outcome_name <- 'HF'
 # ld_clumping <- F
 
+#Checking maxLAVi -> HCM
+# exposure_input_path <- './thanaj22_maxLAVi_gwas_ssf/final/thanaj22_maxLAVi_gwas_ssf.h.tsv.gz'
+# outcome_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
+# selected_exposure_snps <- '../1_data/gwas_associations/thanaj22_maxLAVi_associations.tsv'
+# output_path <- '../3_output/2_MR/'
+# exposure_name <- 'maxLAVi'
+# outcome_name <- 'HCM'
+# ld_clumping <- F
+
 
 #---------------------------------------------------------------------------------
 #Load the exposure GWAS summary statistics + Extract the instruments
@@ -156,11 +165,16 @@ rm(exposure_clumped, exposure_instruments, exposure_summstats, outcome_summstats
 print('Running MR')
 
 #Mainline MR analyses
-mainline_mr_method_list <- c('mr_wald_ratio','mr_ivw_mre')
+##Select IVW with MRE if n_instruments >5, otherwise fixed-effects as per Burgess et al, 2023
+if(nrow(harmonised_data)==1){
+  mainline_mr_method_list <- c('mr_wald_ratio')
+} else {
+  mainline_mr_method_list <- c('mr_ivw'))
+}
 mainline_mr_results <- mr(harmonised_data, method_list=mainline_mr_method_list) #Runs MR with a bunch of different methods- call mr_method_list() to see\
 
 #Sensitivity analyses
-sensitivity_mr_method_list <- c('mr_ivw_mre','mr_weighted_median','mr_weighted_mode','mr_egger_regression')
+sensitivity_mr_method_list <- c('mr_ivw','mr_weighted_median','mr_weighted_mode','mr_egger_regression')
 sensitivity_mr_results <- mr(harmonised_data, method_list=sensitivity_mr_method_list)
 pleiotropy_results <- mr_pleiotropy_test(harmonised_data) #MR Egger test for directional pleiotropy via evaluating MR Egger intercept difference from 0
 res_single <- mr_singlesnp(harmonised_data) #Single-SNP analysis

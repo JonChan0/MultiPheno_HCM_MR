@@ -7,6 +7,7 @@ library(tidyverse)
 library(TwoSampleMR)
 library(tictoc)
 library(ggmanh)
+library(readxl)
 
 args = commandArgs(trailingOnly=TRUE) #Allows input of arguments from Rscript
 
@@ -67,7 +68,6 @@ if(selected_exposure_snps_string !='FALSE'){
 # outcome_name <- 'HCM'
 # ld_clumping <- F
 
-
 #---------------------------------------------------------------------------------
 #Load the exposure GWAS summary statistics + Extract the instruments
 tic()
@@ -81,6 +81,9 @@ if(any(str_detect(selected_exposure_snps, 'tsv'))){ #i.e if a file path is passe
   selected_exposure_snps <- read_csv(selected_exposure_snps) %>% 
     filter(pValue <= 5 * 10^-8) #Filter for only GWS SNPs in the passed in file
   selected_exposure_snps <- selected_exposure_snps$dbSNP
+} else if (any(str_detect(selected_exposure_snps, '.xlsx'))){
+  selected_exposure_snps <- read_excel(selected_exposure_snps, sheet='Sheet1')
+  selected_exposure_snps <- selected_exposure_snps$rsid
 }
 
 #This is the imported summary statisics filtered for those at approx. GWS (i.e pval < 10^-5)

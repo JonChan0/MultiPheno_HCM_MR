@@ -2,6 +2,9 @@
 
 input_tsv_gz_files:
   - /well/PROCARDIS/jchan/misc/gwas_summstats/HCM/Tadros24/nonMTAG/tadros24_hcm.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/DCM/zheng24/zheng24_dcm.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/dbp/keaton24/keaton24_dbp.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/eGFR/liu22/liu22_eGFR.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/bmi/sidorenko24/sidorenko24_bmi.tsv.gz
   # - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/waist-hip-ratio/pulit18/pulit18_whr.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/t2d/sakaue21/sakaue21_t2d.tsv.gz
@@ -27,6 +30,21 @@ input_tsv_gz_files:
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvedvi/pirrucello22/pirrucello22_rvedvi.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvesvi/pirrucello22/pirrucello22_rvesvi.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CMR/rvsvi/pirrucello22/pirrucello22_rvsvi.tsv.gz
+
+# #These refer to parameters for running GCTA-COJO to identify instruments
+# gcta_cojo_phenos:
+# - choi21_PwaveDuration
+# - choi21_QRSinterval
+# - choi21_QTcInterval
+# - choi21_RRinterval
+# - nauffal24_t1time
+# - pirrucello22_maxRAAi
+# - pirrucello22_minRAAi
+# - pirrucello22_rvef
+# - pirrucello22_rvedvi
+# - pirrucello22_rvesvi
+# - pirrucello22_rvsvi
+# - pirrucello22_rafac
 
 #These refer to fixed parameters
 gwas_summstats_harmoniser_ref_folder: '/well/PROCARDIS/jchan/bin/gwas-sumstats-harmoniser/reference_files/'

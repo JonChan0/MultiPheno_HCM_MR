@@ -33,14 +33,14 @@ d1_exposure_path <- str_c(str_match(phenos, '([A-Za-z_\\d]+)_gwas_ssf')[,2],'_gw
 d1_exposure <-phenos2
 d2_outcome <- phenos2
 
-assocs <- str_c(assoc_basepath, list.files(assoc_basepath))
+assocs <- str_c(assoc_basepath, list.files(assoc_basepath)[-str_detect(list.files(assoc_basepath), 'archive')])
 
 variables <- tibble(d1_exposure=phenos2, d2_outcome=phenos2, d1_exposure_path = d1_exposure_path)
 variables <- variables %>%
   rowwise() %>%
   mutate(d1_instruments = ifelse(any(str_detect(assocs,str_c('_',d1_exposure,'_'))), 
                                  assocs[str_detect(assocs, str_c('_',d1_exposure,'_'))],NA)) %>%
-  mutate(d1_ld_clump = ifelse(str_detect(d1_instruments, '\\.csv'), T, F)) %>%
+  mutate(d1_ld_clump = ifelse(str_detect(d1_instruments, '\\.csv'), T, F)) %>% #If it detects .csv, then clump the SNPs
   mutate(d1_exposure = case_when(
     d1_exposure %in% c('crp', 'hf','af','t2d','rvef','rvedvi','rvesvi','rvsvi')~ str_to_upper(d1_exposure),
     d1_exposure == 'rafac' ~ 'RA_Frac_Change',
@@ -51,6 +51,9 @@ variables <- variables %>%
     d2_outcome == 'rafac' ~ 'RA_Frac_Change',
     d2_outcome == 't1time'~'T1time',
     T~d2_outcome) )
+
+#Remove DCM row
+variables <- filter(variables, d1_exposure != 'dcm')
                                  
 #Add in the fixed variables
 variables <- variables %>%

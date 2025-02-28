@@ -57,6 +57,8 @@ rule gwas_summstats_harmoniser:
         output_folder = config['desired_output_folder']
     shell:
         '''
+        module load Nextflow/24.04.2
+
         nextflow run EBISPOT/gwas-sumstats-harmoniser -r v1.1.10 \
         --ref {params.ref_folder} \
         --file {input.gwas_summstats} \
@@ -99,3 +101,18 @@ rule summarise_harmonisation:
             f.write("Phenotype\tHarmonised\tPercentage\n")
             for line in summary_data:
                 f.write(line + "\n")
+
+#Rule 4 = Run GCTA-COJO to output independent SNPs from the harmonised GWAS summary statistics but only for certain summary statistic files as determined in the config.yaml
+
+# rule gcta_cojo:
+#     input:
+#         harmonised_gwas_summstats=lambda wildcards: config['desired_output_folder']+wildcards.input_tsv_gz_basename+'_gwas_ssf/final/'+wildcards.input_tsv_gz_basename+'_gwas_ssf.h.tsv.gz'
+#     output:
+#         independent_snps = config['desired_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}.jma'
+#     resources:
+#         mem_mb = 8000,
+#         threads = 8
+#     shell:
+#         '''
+#         1_gcta_cojo.sh {input.harmonised_gwas_summstats} {output.independent_snps}
+#         '''

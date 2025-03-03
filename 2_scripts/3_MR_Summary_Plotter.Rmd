@@ -99,4 +99,26 @@ ggsave('../3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=60
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 ```
+Also include the plot with SE
+```{r}
+#Output the summary scatter plot of pvalue with effect size
+summary_scatter_se <- ggplot(mr_results,aes(x=b,y=-log10(mtc_pval)))+
+  geom_point(aes(shape=group, col=nonHCM_phenogroup))+
+  geom_errorbar(aes(xmin=b-se, xmax=b+se, col=nonHCM_phenogroup))+
+  geom_vline(xintercept=0, linetype='dashed', col='black')+
+  geom_hline(yintercept=-log10(0.05), linetype='dashed', col='black')+
+  geom_text_repel(aes(label=label, col=nonHCM_phenogroup))+
+  xlab('Beta (Increase in Outcome per Unit Increase in Exposure)')+
+  ylab('-log10 (Adjusted p-value)')+
+  labs(shape='Direction', col='Non-HCM Phenotype Group')+
+  labs(title=str_wrap(str_c('Summary plot of 2-sample Mendelian Randomisation for ', nrow(mr_results), ' analyses'))
+       ,caption='Errobar = standard error'
+       )
+
+print(summary_scatter_se)
+ggsave('../3_output/3_summary_plots/MR_summary_plot_se.png',summary_scatter, dpi=600, width=9, height=6)
+
+#Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
+```
+
 

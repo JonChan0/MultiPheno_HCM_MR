@@ -1,0 +1,102 @@
+---
+title: "3_MR_Summary_Plotter"
+author: "Jonathan Chan"
+date: "2025-02-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggrepel)
+
+theme_set(theme_classic())
+```
+
+This Rmd notebook details the summary plotting of the results from bidirectional , 2-sample MR of HCM-related traits with HCM case/control status.
+
+The 32 GWS SNPs from Tadros et al, 2025 are used as the instruments for the HCM -> phenotype X direction.
+
+## Import
+
+```{r import}
+
+results_folder <- '../3_output/2_MR/'
+
+analyses <- list.dirs(results_folder, recursive=F, full.names=F)
+analyses <- analyses[!analyses %in% c('archive_preIVWchange', 'archive_CVDHugeAmpInstruments') & !str_detect(analyses, 'DCM')]
+#Don't include DCM analyses in overall plot
+
+mainline_results_importer <- function(folder){
+  mainline_results <- read.table(str_c(folder, '/',str_match(folder,'\\/([^\\/]+)_to_')[,2], '_mr_results_mainline.tsv')) %>%
+    select(-id.exposure, -id.outcome) %>%
+    mutate(exposure_outcome = str_c(exposure, outcome, sep=' -> '))
+  
+  return(mainline_results)
+}
+
+mr_results <- map(str_c(results_folder, analyses), ~mainline_results_importer(.)) %>% bind_rows()
+
+write_tsv(mr_results, str_c(results_folder, 'summary_MR_results.tsv'))
+```
+
+Define the grouping of the phenotypes into different parameter groups here.
+
+```{r}
+crf_vars <- c('bmi', 'CRP','DrinksPerWeek','SmokingInitiation','T2D', 'DBP','eGFR')
+ecg_vars <- c('PRinterval','PwaveDuration','QRSinterval','QTcInterval','RRinterval','QTinterval')
+fibrosis_vars <- c('T1time')
+LV_diastolic_vars <- c('longdsr','radialdsr', 'maxLAVi')
+RV_vars <- c('minRAAi','maxRAAi', 'RA_Frac_Change','RVEDVI','RVEF','RVESVI','RVSVI')
+related_disease_vars <- c('AF', 'HF')
+```
+
+## Summary Plotting
+
+This plots a volcano plot of all the MR analyses with Holm's p-value correction for multiple testing correction (controls FWER but with greater power than Bonferroni and also does not assume independence between tests).
+
+```{r}
+#Apply multiple testing correction to the tests
+mr_results <- mr_results %>%
+  mutate(mtc_pval = p.adjust(pval, method='holm')) %>%
+  mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
+  mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
+  mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
+                                        exposure %in% related_disease_vars ~'Related Diseases',
+                                        exposure %in% ecg_vars ~ 'ECG',
+                                        exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
+                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function',
+                                        exposure %in% RV_vars ~ 'RV Function')) %>%
+  mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
+                                        outcome %in% related_disease_vars ~'Related Diseases',
+                                        outcome %in% ecg_vars ~ 'ECG',
+                                        outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
+                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function',
+                                        outcome %in% RV_vars ~ 'RV Function')) %>%
+  mutate(nonHCM_phenogroup = case_when(is.na(exposure_phenogroup) ~ outcome_phenogroup, #This creates the phenogroup for the non-HCM variable in the analysis
+                                       is.na(outcome_phenogroup) ~ exposure_phenogroup, 
+                                       T~NA)) %>%
+  mutate(nonHCM_phenogroup=factor(nonHCM_phenogroup, levels=unique(nonHCM_phenogroup)))
+```
+
+
+```{r}
+#Output the summary scatter plot of pvalue with effect size
+summary_scatter <- ggplot(mr_results,aes(x=b,y=-log10(mtc_pval)))+
+  geom_point(aes(shape=group, col=nonHCM_phenogroup))+
+  geom_vline(xintercept=0, linetype='dashed', col='black')+
+  geom_hline(yintercept=-log10(0.05), linetype='dashed', col='black')+
+  geom_text_repel(aes(label=label, col=nonHCM_phenogroup))+
+  xlab('Beta (Increase in Outcome per Unit Increase in Exposure)')+
+  ylab('-log10 (Adjusted p-value)')+
+  labs(shape='Direction', col='Non-HCM Phenotype Group')+
+  labs(title=str_wrap(str_c('Summary plot of 2-sample Mendelian Randomisation for ', nrow(mr_results), ' analyses'))
+       #,caption='Labelled if significant after MTC'
+       )
+
+print(summary_scatter)
+ggsave('../3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=600, width=9, height=6)
+
+#Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
+```
+

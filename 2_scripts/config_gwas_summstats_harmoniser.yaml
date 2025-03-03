@@ -4,7 +4,7 @@ input_tsv_gz_files:
   - /well/PROCARDIS/jchan/misc/gwas_summstats/HCM/Tadros24/nonMTAG/tadros24_hcm.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/DCM/zheng24/zheng24_dcm.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/dbp/keaton24/keaton24_dbp.tsv.gz
-  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/eGFR/liu22/liu22_eGFR.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/eGFR/loeb24/loeb24_eGFR.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/bmi/sidorenko24/sidorenko24_bmi.tsv.gz
   # - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/waist-hip-ratio/pulit18/pulit18_whr.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/t2d/sakaue21/sakaue21_t2d.tsv.gz

@@ -7,15 +7,15 @@ plink_binary_path: '/well/PROCARDIS/jchan/bin/plink'
 
 d1_exposure: 'eGFR'
 d1_outcome: 'HCM'
-d1_exposure_path: 'liu22_eGFR_gwas_ssf/final/liu22_eGFR_gwas_ssf.h.tsv.gz'
+d1_exposure_path: 'loeb24_eGFR_gwas_ssf/final/loeb24_eGFR_gwas_ssf.h.tsv.gz'
 d1_outcome_path: 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-d1_instruments: '../1_data/gwas_associations/liu22_eGFR_associations.tsv'
+d1_instruments: '../1_data/gwas_associations/loeb24_eGFR_associations.tsv'
 d1_ld_clump: 'FALSE'
 
 d2_exposure: 'HCM'
 d2_outcome: 'eGFR'
 d2_exposure_path: 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-d2_outcome_path: 'liu22_eGFR_gwas_ssf/final/liu22_eGFR_gwas_ssf.h.tsv.gz'
+d2_outcome_path: 'loeb24_eGFR_gwas_ssf/final/loeb24_eGFR_gwas_ssf.h.tsv.gz'
 d2_instruments: "rs1048302,rs3845778,rs4894803,rs2191446,rs11748963,rs3176326,rs12210733,rs66520020,rs2177843,rs11196085,rs17617337,rs182427065,rs41306688,rs8006225,rs8033459,rs28768976,rs7210446,rs2644262,rs5760054"
 d2_ld_clump: 'FALSE'
 

@@ -12,6 +12,7 @@ input_tsv_gz_files:
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/alcohol/liu19/liu19_DrinksPerWeek.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/crp/koskeridis22/koskeridis22_crp.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/af/miyazawa23/miyazawa23_af.tsv.gz
+  - /well/PROCARDIS/jchan/misc/gwas_summstats/CRF/af/nielsen18/nielsen18_af.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/HF/levin22/levin22_hf.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/qt_interval/hoffmann22/hoffmann22_QTinterval.tsv.gz
   - /well/PROCARDIS/jchan/misc/gwas_summstats/ECG/pr_interval/ntalla20/ntalla20_PRinterval.tsv.gz

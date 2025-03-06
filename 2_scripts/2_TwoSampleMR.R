@@ -49,7 +49,7 @@ if(selected_exposure_snps_string !='FALSE'){
 # outcome_name <- 'HCM'
 # ld_clumping <- F
 
-#Direction 2 #Using the full MTAG SNPs
+#Direction 2
 #32 GWS SNPs for HCM for HCM -> HF
 # exposure_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
 # outcome_input_path <- './levin22_hf_gwas_ssf/final/levin22_hf_gwas_ssf.h.tsv.gz'
@@ -194,6 +194,10 @@ forest <- mr_forest_plot(res_single)
 loo_forest <- mr_leaveoneout_plot(res_loo)
 #print(loo_forest[[1]])
 
+#Add an output step to output odds-ratio with 95% confidence interval (instead of log-odds with standard error)
+safe_generate_odds_ratios <- safely(generate_odds_ratios)
+or_result <- safe_generate_odds_ratios(sensitivity_mr_results)
+
 #MendelianRandomization Addendum - computing an approximation of the first-stage F-statistic from genetic variants -> exposure
 mr_object <- MendelianRandomization::mr_input(bx=harmonised_data$beta.exposure, bxse=harmonised_data$se.exposure,
                                               by=harmonised_data$beta.outcome, byse= harmonised_data$se.outcome,
@@ -221,6 +225,11 @@ ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_m
 
 write.table(mainline_mr_results,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_mainline.tsv'),sep='\t')
 write.table(sensitivity_mr_results,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_sensitivity.tsv'),sep='\t')
+if (!is.null(or_result$result)){ 
+  write.table(or_result$result,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_sensitivity_oddsratio.tsv'),sep='\t')
+} else {
+  print('Odds ratio function failed')
+}
 
 #Print out a HTML report
 print('Constructing HTML Report')

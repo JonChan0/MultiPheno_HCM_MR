@@ -7,3 +7,4 @@
 3_output/harmonisation_summary.tsv
 *.png
 .Rdata
+*.yaml

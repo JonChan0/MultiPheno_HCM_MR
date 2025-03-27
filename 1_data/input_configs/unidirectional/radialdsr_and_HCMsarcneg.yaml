@@ -1,9 +1,0 @@
-output_path: '../3_output/2_MR/'
-ld_eur_bed_file: '../../hcmr_ukbb/popgen/5_MR/pipeline_files/1kg_v3_ld/EUR'
-plink_binary_path: '/well/PROCARDIS/jchan/bin/plink'
-d1_exposure: 'HCMsarcneg'
-d1_outcome: 'radialdsr'
-d1_exposure_path: 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-d1_outcome_path: 'thanaj22_radialdsr_gwas_ssf/final/thanaj22_radialdsr_gwas_ssf.h.tsv.gz'
-d1_instruments: "rs846111,rs1763606,rs7588378,rs79146658,rs4685090,rs9311485,rs9647379,rs991727,rs3176326,rs12212795,rs9320939,rs2177843,rs11196085,rs2234962,rs58747679,rs77963625,rs7301677,rs41306688,rs8006225,rs8033459,rs393838,rs7210446,rs2644262,rs2070458"
-d1_ld_clump: 'FALSE'

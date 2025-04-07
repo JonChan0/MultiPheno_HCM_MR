@@ -8,10 +8,10 @@ echo $(date)
 
 
 #This applies to running the bidirectional MR with HCMR GWAS of plasma proteins with HCM
-for file in ../1_data/input_configs/unidirectional/*.yaml
+for file in ../1_data/input_configs/subgroup_analyses/*.yaml
 do
     echo "Carrying out UNI-directional MR on ${file}"
-    snakemake --profile bmrc_profile_smk5  --snakefile 2b_unidirectional_MR.smk --configfile $file --rerun-incomplete
+    snakemake --profile bmrc_profile_smk5  --snakefile 2_bidrectional_MR.smk --configfile $file --rerun-incomplete
 done
 
 

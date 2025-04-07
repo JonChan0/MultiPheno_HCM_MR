@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggrepel)
+rm(list=ls())
 
 theme_set(theme_classic())
 ```
@@ -24,7 +25,7 @@ The 32 GWS SNPs from Tadros et al, 2025 are used as the instruments for the HCM 
 results_folder <- '../3_output/2_MR/'
 
 analyses <- list.dirs(results_folder, recursive=F, full.names=F)
-analyses <- analyses[!analyses %in% c('archive_preIVWchange', 'archive_CVDHugeAmpInstruments', 'subgroup_analyses') & !str_detect(analyses, 'DCM')]
+analyses <- analyses[!str_detect(analyses, 'archive|subgroup|DCM')]
 #Don't include DCM analyses in overall plot
 
 mainline_results_importer <- function(folder){
@@ -88,63 +89,103 @@ mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_im
 write_tsv(mr_results_or, str_c(results_folder, 'summary_MR_results_oddsratio.tsv'))
 ```
 
+```{r}
+
+perunit_to_perSD_normaliser <- function(input_tb,pooled_sds, type='mr_results'){
+    # `pooled_sds` should be a named vector or list where names match `exposure_outcome` values
+  # Example: c("BMI -> HCM" = 4.3, "DBP -> HCM" = 11.5)
+
+  if (!type %in% c('mr_results', 'mr_results_or')) {
+    stop('Unsupported tibble type')
+  }
+
+  # Make sure all the names in pooled_sds are present in the data
+  matched_traits <- names(pooled_sds)
+  
+  # Create a function to fetch the sd based on the exposure_outcome value
+  get_sd <- function(trait) {
+    if (trait %in% matched_traits) {
+      return(pooled_sds[[trait]])
+    } else {
+      return(1)  # No change if trait is not listed
+    }
+  }
+
+  # Apply transformation
+  if (type == 'mr_results') {
+    output_tb <- input_tb %>%
+      rowwise() %>%
+      mutate(b = b * get_sd(exposure_outcome)) %>%
+      ungroup()
+  } else if (type == 'mr_results_or') {
+    output_tb <- input_tb %>%
+      rowwise() %>%
+      mutate(b = b * get_sd(exposure_outcome),
+             lo_ci = lo_ci * get_sd(exposure_outcome),
+             up_ci = up_ci * get_sd(exposure_outcome)) %>%
+      ungroup()
+  }
+
+  return(output_tb)
+}
+```
+
 This provides normalisation of BMI and DBP traits to convert their per-unit effect to per-SD effect using the original SD from their publications supplementary information.
 
 ```{r}
 bmi_dbp_normalisation=T
 
-bmi_dbp_normaliser <- function(input_tb, type='mr_results'){
-   # Define standard deviations and sample sizes for three studies
-  sds <- c(11, 12, 11)        # Standard deviations for the three samples
-  ns <- c(220501, 50649, 458577)      # Corresponding sample sizes
-  
-  # Calculate the pooled standard deviation using base R
-  dbp_keaton24_sd <- sqrt(
-    sum((ns - 1) * sds^2) / sum(ns - 1)
-    )
-  
-  #Repeat with BMI
-  sds <- c(4.32,5.58,3.76,4.72,3.4,4.43,4.19,4.97,4.43,5.37,3.65,4.76)
-  ns <- c(4652,6954,4385,5891,10190,15522,16833,23150,15738,27262,18525,19285)
-  bmi_sidorenko24_sd <- sqrt(
-    sum((ns - 1) * sds^2) / sum(ns - 1)
-    )
-  
-  rm(sds,ns)
-  
-  #Transform the mr_results and mr_results_or tibbles
-  if(type=='mr_results'){
-      output_tb <- input_tb %>%
-    mutate(b = case_when(exposure_outcome== 'BMI -> HCM'~ b * bmi_sidorenko24_sd,
-                         exposure_outcome == 'DBP -> HCM' ~ b * dbp_keaton24_sd,
-                         T~b))
-  } else if (type=='mr_results_or'){
-      output_tb <- input_tb %>%
-    mutate(b = case_when(exposure_outcome== 'BMI -> HCM'~ b * bmi_sidorenko24_sd,
-                         exposure_outcome == 'DBP -> HCM' ~ b * dbp_keaton24_sd,
-                         T~b),
-           lo_ci= case_when(exposure_outcome== 'BMI -> HCM'~ lo_ci * bmi_sidorenko24_sd,
-                         exposure_outcome == 'DBP -> HCM' ~ lo_ci * dbp_keaton24_sd,
-                         T~lo_ci),
-           up_ci = case_when(exposure_outcome== 'BMI -> HCM'~ up_ci * bmi_sidorenko24_sd,
-                         exposure_outcome == 'DBP -> HCM' ~ up_ci * dbp_keaton24_sd,
-                         T~up_ci) )
-  } else{
-    print('Not supported tibble type')
-    stop()
-  }
-  
-  return(output_tb)
+# Define standard deviations and sample sizes for three studies
+sds <- c(11, 12, 11)        # Standard deviations for the three samples
+ns <- c(220501, 50649, 458577)      # Corresponding sample sizes
 
-  
-}
+# Calculate the pooled standard deviation using base R
+dbp_keaton24_sd <- sqrt(
+  sum((ns - 1) * sds^2) / sum(ns - 1)
+  )
+
+rm(sds,ns)
+
+#Repeat with BMI
+sds <- c(4.32,5.58,3.76,4.72,3.4,4.43,4.19,4.97,4.43,5.37,3.65,4.76)
+ns <- c(4652,6954,4385,5891,10190,15522,16833,23150,15738,27262,18525,19285)
+bmi_sidorenko24_sd <- sqrt(
+  sum((ns - 1) * sds^2) / sum(ns - 1)
+  )
+
+rm(sds,ns)
+
+#If variable to normalise is the exposure, divide the beta by SD to convert the effect per-unit exposure to effect per-SD exposure.
+#If variable to normalise is the outcome, multiple the beta by SD to convert the effect (units outcome) to effect (SD outcome).
+bmi_dbp_sds <- c('DBP -> HCM' = dbp_keaton24_sd, 
+                 'BMI -> HCM' = bmi_sidorenko24_sd,
+                 'HCM -> DBP' = 1/dbp_keaton24_sd,
+                 'HCM -> BMI' = 1/bmi_sidorenko24_sd)
 
 if(isTRUE(bmi_dbp_normalisation)){
-  mr_results <- bmi_dbp_normaliser(mr_results)
-  mr_results_or <- bmi_dbp_normaliser(mr_results_or, type='mr_results_or')
+  mr_results <- perunit_to_perSD_normaliser(mr_results, bmi_dbp_sds)
+  mr_results_or <- perunit_to_perSD_normaliser(mr_results_or, bmi_dbp_sds, type='mr_results_or')
 }
 ```
 
+This provides normalisation of the Thanaj et al, 2022 diastolic measures i.e longitudinal and radial diastolic strain rates into per-SD measures
+
+```{r}
+thanaj_dsr_normalisation <- T
+
+longdsr_thanaj22_sd <- 0.6
+radialdsr_thanaj22_sd <- 1.9
+
+thanaj_dsr_sds <- c('longdsr -> HCM' = longdsr_thanaj22_sd,
+                    'radialdsr -> HCM' = radialdsr_thanaj22_sd,
+                    'HCM -> longdsr' = 1/longdsr_thanaj22_sd,
+                    'HCM -> radialdsr' = 1/radialdsr_thanaj22_sd)
+
+if(isTRUE(thanaj_dsr_normalisation)){
+  mr_results <- perunit_to_perSD_normaliser(mr_results, thanaj_dsr_sds)
+  mr_results_or <- perunit_to_perSD_normaliser(mr_results_or, thanaj_dsr_sds, type='mr_results_or')
+}
+```
 
 ## Summary Plotting
 
@@ -182,7 +223,7 @@ summary_scatter <- ggplot(mr_results,aes(x=b,y=-log10(mtc_pval)))+
   geom_vline(xintercept=0, linetype='dashed', col='black')+
   geom_hline(yintercept=-log10(0.05), linetype='dashed', col='black')+
   geom_text_repel(aes(label=label, col=nonHCM_phenogroup))+
-  xlab('Beta (Increase in Outcome per SD, Unit or Log-Odds Increase in Exposure)')+
+  xlab('Beta (Change in Outcome per Change in Exposure)')+
   ylab('-log10 (Adjusted p-value)')+
   labs(shape='Direction', col='Non-HCM Phenotype Group')+
   labs(title=str_wrap(str_c('Summary plot of 2-sample Mendelian Randomisation for ', nrow(mr_results), ' analyses'))
@@ -194,6 +235,7 @@ ggsave('../3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=60
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 #Likewise with DBP and BMI which are normalised using the SD from the original publication.
+#Likweise with Thanaj DSR
 ```
 
 Also include the plot with 95% confidence interval.
@@ -205,11 +247,11 @@ summary_scatter_confint <- ggplot(mr_results_or,aes(x=b,y=-log10(mtc_pval)))+
   geom_vline(xintercept=0, linetype='dashed', col='black')+
   geom_hline(yintercept=-log10(0.05), linetype='dashed', col='black')+
   geom_text_repel(aes(label=label, col=nonHCM_phenogroup))+
-  xlab('Beta (Increase in Outcome per SD, Unit or Log-Odds Increase in Exposure)')+
+  xlab('Beta (Change in Outcome per Change in Exposure)')+
   ylab('-log10 (Adjusted p-value)')+
   labs(shape='Direction', col='Non-HCM Phenotype Group')+
   labs(title=str_wrap(str_c('Summary plot of 2-sample Mendelian Randomisation for ', nrow(mr_results), ' analyses'))
-       ,caption='Errorbars = 95% confidence interval'
+       ,caption='Error bars = 95% confidence interval'
        )
 
 print(summary_scatter_confint)
@@ -218,47 +260,59 @@ ggsave('../3_output/3_summary_plots/MR_summary_plot_confint.png',summary_scatter
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 ```
 
+I also repeat the above summary plot but with the discrete variables transformed from Log(Odds Ratio) to Odds Ratio.
+
+This is defunct because plotting odds-ratio is not good when you show both sides (i.e <0 and >0 are not equally well represented.)
+```{r}
+# #Convert all discrete variables to per-OR (instead of Log(Odds Ratio)) exposure and outcome
+# discrete_vars <- c('SmokingInitiation','T2D', related_disease_vars, 'HCM', 'DCM')
+# 
+# #To convert outcome (per-log(OR) to OR), just exponentiate the beta (increase in log(OR) per unit exposure)
+# #To convert exposure (per-log(OR) to OR), divide the 
+# mr_results_or <- mr_results_or %>%
+#   mutate(plot_y = case_when(outcome %in% discrete_vars ~ or,
+#                             T~b),
+#          plot_y_upci = case_when(outcome %in% discrete_vars~or_uci95,
+#                                  T~up_ci),
+#          plot_y_loci = case_when(outcome %in% discrete_vars~or_lci95,
+#                                  T~lo_ci))
+# 
+# #Output the summary scatter plot of pvalue with effect size
+# summary_scatter_confint_discreteoutcome_OR <- ggplot(mr_results_or,aes(x=plot_y,y=-log10(mtc_pval)))+
+#   geom_point(aes(shape=group, col=nonHCM_phenogroup))+
+#   geom_errorbar(aes(xmin=plot_y_loci, xmax=plot_y_upci, col=nonHCM_phenogroup))+
+#   geom_vline(xintercept=0, linetype='dashed', col='black')+
+#   geom_hline(yintercept=-log10(0.05), linetype='dashed', col='black')+
+#   geom_text_repel(aes(label=label, col=nonHCM_phenogroup))+
+#   xlab('Beta (Increase in Outcome per Increase in Exposure)')+
+#   ylab('-log10 (Adjusted p-value)')+
+#   labs(shape='Direction', col='Non-HCM Phenotype Group')+
+#   labs(title=str_wrap(str_c('Summary plot of 2-sample Mendelian Randomisation for ', nrow(mr_results), ' analyses'))
+#        ,caption='Error bars = 95% confidence interval'
+#        )
+# 
+# print(summary_scatter_confint_discreteoutcome_OR)
+# ggsave('../3_output/3_summary_plots/MR_summary_plot_confint_discreteoutcomeOR.png',summary_scatter_confint, dpi=600, width=9, height=6)
+```
+
+
 ## Forest Plot for Significant Conclusions
 
 ```{r}
 sig_mr_results_or <- mr_results_or %>%
   filter(exposure_outcome %in% filter(mr_results,mtc_pval <=0.05)$exposure_outcome)
 
-thanaj_dsr_normalisation <- T
-
-thanaj_dsr_normaliser <- function(input_tb){
-  longdsr_thanaj22_sd <- 0.6
-  radialdsr_thanaj22_sd <- 1.9
-  
-  output_tb <- input_tb %>%
-    mutate(b = case_when(outcome=='longdsr' ~ b/longdsr_thanaj22_sd,
-                         outcome == 'radialdsr' ~ b/radialdsr_thanaj22_sd,
-                         T ~ b),
-           lo_ci = case_when(outcome=='longdsr' ~ lo_ci/longdsr_thanaj22_sd,
-                         outcome == 'radialdsr' ~ lo_ci/radialdsr_thanaj22_sd,
-                         T ~ lo_ci),
-           up_ci = case_when(outcome=='longdsr' ~ up_ci/longdsr_thanaj22_sd,
-                         outcome == 'radialdsr' ~ up_ci/radialdsr_thanaj22_sd,
-                         T ~ up_ci))
-}
-
-if(isTRUE(thanaj_dsr_normalisation)){
-  sig_mr_results_or <- thanaj_dsr_normaliser(sig_mr_results_or)
-}
-
 #Create a faceted plot where I have the top plot = per-unit OR and the bottom plot = per-SD OR
-
-if(isTRUE(bmi_dbp_normalisation)){
-  sig_mr_results_or <- sig_mr_results_or %>%
-    mutate(exposure_plot_group = case_when(exposure%in% c(RV_vars, 'BMI','DBP') ~ 'Per-SD Exposure', 
-                                         exposure == 'HCM' ~ 'Per-Log(Odds) Exposure',
-                                         T~'Per-Unit Exposure'))
-}else{
-  sig_mr_results_or <- sig_mr_results_or %>%
-    mutate(exposure_plot_group = case_when(exposure%in% c(RV_vars) ~ 'Per-SD Exposure', 
-                                         exposure == 'HCM' ~ 'Per-Log(Odds) Exposure',
-                                         T~'Per-Unit Exposure'))
+if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
+  persd_exposure_vars <- c(RV_vars, 'BMI','DBP','longdsr','radialdsr')
+} else{
+  persd_exposure_vars <- c(RV_vars)
 }
+
+sig_mr_results_or <- sig_mr_results_or %>%
+  mutate(exposure_plot_group = case_when(exposure%in% persd_exposure_vars ~ 'Per-SD Exposure', 
+                                       exposure == 'HCM' ~ 'Per-Log(Odds Ratio) Exposure',
+                                       T~'Per-Unit Exposure'))
 
 sig_mr_results_or <- sig_mr_results_or %>%
   mutate(outcome_plot_group = ifelse(outcome %in% c('HCM',related_disease_vars,'T2D','SmokingInitiation'), 'OR', 'beta')) %>%
@@ -268,7 +322,7 @@ forest_plot1 <- ggplot(sig_mr_results_or)+
   geom_point(aes(x=b, y= exposure_outcome, col=nonHCM_phenogroup))+
   geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab(ifelse(isTRUE(bmi_dbp_normalisation), 'Change in Log-Odds(Discrete Outcome) or in SD (Continuous Outcome) \n per Log-Odds or SD Exposure','Change in Log-Odds(Discrete Outcome) or in SD (Continuous Outcome) \n per Log-Odds, SD, or Unit Exposure'))+
+  xlab('Change in Outcome per Change in Exposure')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group')+
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
@@ -307,41 +361,26 @@ subgroup_mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_r
 
 
 ```{r}
-sig_subgroup_mr_results_or <- subgroup_mr_results_or %>%
-  filter(label!='')
-
-thanaj_dsr_normalisation <- T
-
-if(isTRUE(thanaj_dsr_normalisation)){
-  sig_subgroup_mr_results_or <- thanaj_dsr_normaliser(sig_subgroup_mr_results_or)
-}
-
 #Create a faceted plot where I have the top plot = per-unit OR and the bottom plot = per-SD OR
-
-if(isTRUE(bmi_dbp_normalisation)){
-  sig_subgroup_mr_results_or <- sig_subgroup_mr_results_or %>%
-    mutate(exposure_plot_group = case_when(exposure%in% c(RV_vars, 'BMI','DBP') ~ 'Per-SD Exposure', 
-                                         str_detect(exposure, 'HCM') ~ 'Per-Log(Odds) Exposure',
-                                         T~'Per-Unit Exposure'))
-}else{
-  sig_subgroup_mr_results_or <- sig_subgroup_mr_results_or %>%
-    mutate(exposure_plot_group = case_when(exposure%in% c(RV_vars) ~ 'Per-SD Exposure', 
-                                         str_detect(exposure, 'HCM')  ~ 'Per-Log(Odds) Exposure',
-                                         T~'Per-Unit Exposure'))
+if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
+  persd_vars <- c(RV_vars, 'BMI','DBP','longdsr','radialdsr')
+} else{
+  persd_vars <- c(RV_vars)
 }
 
-sig_subgroup_mr_results_or <- sig_subgroup_mr_results_or %>%
-  mutate(outcome_plot_group = ifelse(outcome %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation'), 'OR', 'beta')) %>%
+subgroup_mr_results_or <- subgroup_mr_results_or %>%
+  mutate(outcome_plot_group = case_when(outcome %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation') ~ 'Discrete Outcome',
+                                        outcome %in% persd_vars ~ 'Continuous Outcome')) %>%
   mutate(exposure_outcome=factor(exposure_outcome))
 
-forest_plot_subgroup<- ggplot(sig_subgroup_mr_results_or)+
+forest_plot_subgroup<- ggplot(subgroup_mr_results_or)+
   geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=nonHCM_phenogroup))+
   geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab(ifelse(isTRUE(bmi_dbp_normalisation), 'Change in Log-Odds(Discrete Outcome) or in SD (Continuous Outcome) \n per Log-Odds(HCM) Exposure','Change in Log-Odds(Discrete Outcome) or in SD (Continuous Outcome) \n per Log-Odds Exposure'))+
+  xlab('Change in Outcome ( log(Odds Ratio) for Discrete & SD for Continuous ) per Change in Exposure')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group',  caption='95% confidence intervals shown')+
-  facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
+  facet_wrap(vars(outcome_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup)
 ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup.png',forest_plot_subgroup, dpi=600, width=9, height=6)

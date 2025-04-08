@@ -260,11 +260,11 @@ ggsave('../3_output/3_summary_plots/MR_summary_plot_confint.png',summary_scatter
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 ```
 
-I also repeat the above summary plot but with the discrete variables transformed from Log(Odds Ratio) to Odds Ratio.
+I also repeat the above summary plot but with the discrete variables transformed from Log(Odds) to Odds Ratio.
 
 This is defunct because plotting odds-ratio is not good when you show both sides (i.e <0 and >0 are not equally well represented.)
 ```{r}
-# #Convert all discrete variables to per-OR (instead of Log(Odds Ratio)) exposure and outcome
+# #Convert all discrete variables to per-OR (instead of Log(Odds)) exposure and outcome
 # discrete_vars <- c('SmokingInitiation','T2D', related_disease_vars, 'HCM', 'DCM')
 # 
 # #To convert outcome (per-log(OR) to OR), just exponentiate the beta (increase in log(OR) per unit exposure)
@@ -311,7 +311,7 @@ if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
 
 sig_mr_results_or <- sig_mr_results_or %>%
   mutate(exposure_plot_group = case_when(exposure%in% persd_exposure_vars ~ 'Per-SD Exposure', 
-                                       exposure == 'HCM' ~ 'Per-Log(Odds Ratio) Exposure',
+                                       exposure == 'HCM' ~ 'Per-Log(Odds) Exposure',
                                        T~'Per-Unit Exposure'))
 
 sig_mr_results_or <- sig_mr_results_or %>%
@@ -333,9 +333,12 @@ ggsave('../3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot1, dpi=600
 
 ## Subgroup Analyses
 
+I perform subgroup analyses for the significant conclusions seen from the initial MR analysis.
+
 ```{r}
 results_folder <- '../3_output/2_MR/subgroup_analyses/'
 analyses <- list.dirs(results_folder, recursive=F, full.names=F)
+analyses <- analyses[!analyses %in% c('main_analysis_notsig')]
 
 subgroup_mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_importer(.)) %>% bind_rows() %>%
   filter(method=='Inverse variance weighted') %>%
@@ -359,31 +362,65 @@ subgroup_mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_r
   mutate(nonHCM_phenogroup=factor(nonHCM_phenogroup, levels=unique(nonHCM_phenogroup)))
 ```
 
+Applying normalisation to some of the continuous values to per-SD.
 
 ```{r}
-#Create a faceted plot where I have the top plot = per-unit OR and the bottom plot = per-SD OR
+bmi_dbp_subgroup_sds <- c(
+  'DBP -> HCMsarcneg' = dbp_keaton24_sd, 
+  'DBP -> HCMsarcpos' = dbp_keaton24_sd, 
+  'BMI -> HCMsarcneg' = bmi_sidorenko24_sd,
+  'BMI -> HCMsarcpos' = bmi_sidorenko24_sd)
+
+thanaj_dsr_subgroup_sds <- c(
+                    'HCMsarcneg -> longdsr' = 1/longdsr_thanaj22_sd,
+                    'HCMsarcpos -> longdsr' = 1/longdsr_thanaj22_sd,
+                    'HCMsarcneg -> radialdsr' = 1/radialdsr_thanaj22_sd,
+                    'HCMsarcpos -> radialdsr' = 1/radialdsr_thanaj22_sd)
+
+subgroup_mr_results_or <- perunit_to_perSD_normaliser(subgroup_mr_results_or, bmi_dbp_subgroup_sds, type='mr_results_or')
+subgroup_mr_results_or <- perunit_to_perSD_normaliser(subgroup_mr_results_or, thanaj_dsr_subgroup_sds, type='mr_results_or')
+
 if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
   persd_vars <- c(RV_vars, 'BMI','DBP','longdsr','radialdsr')
 } else{
   persd_vars <- c(RV_vars)
 }
 
+```
+
+
+
+```{r}
 subgroup_mr_results_or <- subgroup_mr_results_or %>%
   mutate(outcome_plot_group = case_when(outcome %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation') ~ 'Discrete Outcome',
                                         outcome %in% persd_vars ~ 'Continuous Outcome')) %>%
+  mutate(exposure_plot_group = case_when(exposure %in% persd_vars~ 'Per-SD Exposure',
+                                         exposure %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation') ~ 'Per-Log(Odds) Exposure')) %>%
   mutate(exposure_outcome=factor(exposure_outcome))
 
-forest_plot_subgroup<- ggplot(subgroup_mr_results_or)+
+forest_plot_subgroup_hcm_exposure<- ggplot(filter(subgroup_mr_results_or, str_detect(exposure, 'HCM')))+
   geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=nonHCM_phenogroup))+
   geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab('Change in Outcome ( log(Odds Ratio) for Discrete & SD for Continuous ) per Change in Exposure')+
+  xlab('Change in Outcome ( Log(Odds) ) for Discrete & SD for Continuous ) per Change in Exposure')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group',  caption='95% confidence intervals shown')+
   facet_wrap(vars(outcome_plot_group), nrow=3, drop=TRUE, scales='free')
 
-print(forest_plot_subgroup)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup.png',forest_plot_subgroup, dpi=600, width=9, height=6)
+print(forest_plot_subgroup_hcm_exposure)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=9, height=6)
+
+forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
+  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=nonHCM_phenogroup))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
+  geom_vline(xintercept=0, col='black', linetype='dashed')+
+  xlab('Change in Outcome ( Log(Odds) ) per Change in Exposure')+
+  ylab('Exposure -> Outcome')+
+  labs(col='Non-HCM Phenotype Group',  caption='95% confidence intervals shown')+
+  facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
+
+print(forest_plot_subgroup_hcm_outcome)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome.png',forest_plot_subgroup_hcm_outcome, dpi=600, width=9, height=6)
 ```
 
 

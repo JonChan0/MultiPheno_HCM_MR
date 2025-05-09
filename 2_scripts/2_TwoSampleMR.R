@@ -194,9 +194,30 @@ forest <- mr_forest_plot(res_single)
 loo_forest <- mr_leaveoneout_plot(res_loo)
 #print(loo_forest[[1]])
 
-#Add an output step to output odds-ratio with 95% confidence interval (instead of log-odds with standard error)
-safe_generate_odds_ratios <- safely(generate_odds_ratios)
-or_result <- safe_generate_odds_ratios(sensitivity_mr_results)
+  #Add an output step to output odds-ratio with 95% confidence interval (instead of log-odds with standard error)
+  safe_generate_odds_ratios <- safely(generate_odds_ratios)
+  or_result <- safe_generate_odds_ratios(sensitivity_mr_results)
+
+  # Output the harmonised instrument details (Beta and SE for exposure/outcome)
+  print("Writing individual instrument details (beta/se) to TSV file.")
+  instrument_details_df <- harmonised_data %>%
+    dplyr::select(
+      SNP,
+      effect_allele.exposure, # Keep alleles for reference
+      other_allele.exposure,
+      eaf.exposure,          # Keep EAF for context
+      beta.exposure,
+      se.exposure,
+      pval.exposure,         # Keep p-values
+      beta.outcome,
+      se.outcome,
+      pval.outcome,
+      mr_keep              # Indicates if SNP was kept after harmonisation checks
+    )
+  
+  instrument_details_filename <- file.path(output_path, paste0(exposure_name, '_to_', outcome_name, '_instrument_details.tsv'))
+  write_tsv(instrument_details_df, instrument_details_filename)
+  print(paste("Instrument details saved to:", instrument_details_filename))
 
 #MendelianRandomization Addendum - computing an approximation of the first-stage F-statistic from genetic variants -> exposure
 mr_object <- MendelianRandomization::mr_input(bx=harmonised_data$beta.exposure, bxse=harmonised_data$se.exposure,

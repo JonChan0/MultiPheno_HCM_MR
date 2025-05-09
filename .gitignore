@@ -8,3 +8,7 @@
 *.png
 .Rdata
 *.yaml
+*.pdf
+*.tsv
+*.rds
+2_scripts/2c_MR_IV_Pleiotropy_Checker.Rmd

@@ -319,8 +319,8 @@ sig_mr_results_or <- sig_mr_results_or %>%
   mutate(exposure_outcome=factor(exposure_outcome))
 
 forest_plot1 <- ggplot(sig_mr_results_or)+
-  geom_point(aes(x=b, y= exposure_outcome, col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
+  geom_point(aes(x=b, y= exposure_outcome))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
   xlab('Change in Outcome per Change in Exposure')+
   ylab('Exposure -> Outcome')+
@@ -396,27 +396,28 @@ subgroup_mr_results_or <- subgroup_mr_results_or %>%
                                         outcome %in% persd_vars ~ 'Continuous Outcome')) %>%
   mutate(exposure_plot_group = case_when(exposure %in% persd_vars~ 'Per-SD Exposure',
                                          exposure %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation') ~ 'Per-Log(Odds) Exposure')) %>%
-  mutate(exposure_outcome=factor(exposure_outcome))
+  mutate(exposure_outcome=factor(exposure_outcome)) %>%
+  mutate(sarcgroup = ifelse(str_detect(exposure_outcome,'sarcneg'), 'Sarcomere-Negative', 'Sarcomere-Positive'))
 
 forest_plot_subgroup_hcm_exposure<- ggplot(filter(subgroup_mr_results_or, str_detect(exposure, 'HCM')))+
-  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
+  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=sarcgroup))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab('Change in Outcome ( Log(Odds) ) for Discrete & SD for Continuous ) per Change in Exposure')+
+  xlab('Change in Outcome (Log(Odds)) for Discrete & SD for Continuous ) per Change in Exposure')+
   ylab('Exposure -> Outcome')+
-  labs(col='Non-HCM Phenotype Group',  caption='95% confidence intervals shown')+
+  labs(col='Sarcomere Subroup',  caption='95% confidence intervals shown')+
   facet_wrap(vars(outcome_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_exposure)
 ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=9, height=6)
 
 forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
-  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=nonHCM_phenogroup))+
+  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=sarcgroup))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab('Change in Outcome ( Log(Odds) ) per Change in Exposure')+
+  xlab('Change in Outcome (Log(Odds)) per Change in Exposure')+
   ylab('Exposure -> Outcome')+
-  labs(col='Non-HCM Phenotype Group',  caption='95% confidence intervals shown')+
+  labs(col='Sarcomere Subgroup',  caption='95% confidence intervals shown')+
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_outcome)

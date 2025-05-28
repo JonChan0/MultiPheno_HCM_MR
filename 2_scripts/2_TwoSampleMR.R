@@ -125,7 +125,7 @@ if (isTRUE(ld_clumping)){
   
 toc()
 
-print(head(exposure_clumped))
+# print(head(exposure_clumped))
 exposure_instruments <- exposure_clumped
 rm(exposure_clumped, full_exposure_summstats)
 
@@ -151,6 +151,9 @@ if(nrow(outcome_summstats) != nrow(exposure_instruments)){
   print('Failed to identify the some of the exposure instruments in the outcome GWAS so ignoring those instruments')
   missing_snps <- exposure_instruments$SNP[!exposure_instruments$SNP %in% outcome_summstats$SNP]
   print(str_c('The following ', nrow(missing_snps), ' SNPs of original ',nrow(exposure_instruments),' instruments are not present in the outcome summary statistics: ',missing_snps))
+} else if(nrow(outcome_summstats) == 0){
+  print('None of the instrument SNPs were found in the outcome summary statistics after formatting')
+  stop()
 }
 
 toc()

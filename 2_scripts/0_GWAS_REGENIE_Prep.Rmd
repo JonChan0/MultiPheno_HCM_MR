@@ -1,0 +1,31 @@
+---
+title: "0_GWAS_REGENIE_Prep"
+author: "Jonathan Chan"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+This prepare the REGENIE pheno and covariate files for HCMR data.
+
+```{r}
+total_df_notransform <- readRDS('../../EDA_HCMR/output/data/total_notransform_df.rds')
+
+#Import in the old files to base the format off
+old_pheno <- read_tsv('../../EDA_HCMR/popgen/2_gwas/data/hcmr/REGENIE/regenie_hcmr_pheno.tsv')
+old_covar<- read_tsv('../../EDA_HCMR/popgen/2_gwas/data/hcmr/REGENIE/regenie_hcmr_covar.tsv')
+```
+Add the phenotypes of interest i.e lge_total and ecvfwhole.
+
+```{r}
+new_pheno <- old_pheno %>%
+  left_join(select(total_df_notransform,HCR_IDs, ecvfwhole, lge_total), by=c('IID'='HCR_IDs')) %>%
+  select(FID, IID, ecvfwhole:lge_total)
+
+write_tsv(new_pheno, '../../EDA_HCMR/popgen/2_gwas/data/hcmr/REGENIE/regenie_hcmr_pheno2.tsv')
+```
+
+

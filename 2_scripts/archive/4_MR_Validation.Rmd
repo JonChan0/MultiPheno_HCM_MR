@@ -1,0 +1,904 @@
+---
+title: "4_MR_Validation"
+author: "Jonathan Chan"
+date: "2025-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(matrixStats)
+library(survival)
+library(ggrepel)
+library(survminer)
+
+theme_set(theme_classic())
+rm(list=ls())
+```
+
+# HCM -> - HF
+
+This provides some validation work for the protective effect of HCM on HF.
+Given that HCM GWAS was performed without UKB and likewise with the HF, the UKB should provide a external dataset to test this hypothesis.
+Specifically, if the common genetic liability of HCM protects against HF, a negative association between PRS and incidence of HF should be observed in UKB individuals.
+
+## PRS-Based Validation
+
+### Import
+
+```{r import}
+ukb_prs <- read.table('../../HCM_IntScore/genscore/pred/prs/UKB/IMPUTED/ukb_imputed_prs.sscore')
+
+#Perform similar EDA as per HCM Plasma Proteomics work but updated for efficiency
+
+#Import in basic covariates
+ukb_20240209_snptest_covariates <- data.table::fread('../../Omics/Plasma_Proteomics/DATA/UKB/RAP/Cohorts/2024_02_09_AllUKB_Age_Sex_Height_Weight_10PCs.tsv') %>%
+  dplyr::rename(ID=`Participant ID`)
+data.table::setDF(ukb_20240209_snptest_covariates)
+
+colnames(ukb_20240209_snptest_covariates)[2:3] <- c('age','sex')
+colnames(ukb_20240209_snptest_covariates)[12:21] <- str_c('pc',rep(1:10))
+
+#Filter for instance 0 of height/weight/BMI
+ukb_20240209_snptest_covariates <- ukb_20240209_snptest_covariates %>%
+  select(-matches('Instance [123]'))
+colnames(ukb_20240209_snptest_covariates)[4:5] <- c('height', 'weight')
+ukb_20240209_snptest_covariates <- ukb_20240209_snptest_covariates %>%
+  mutate(bmi = weight/(height/ 100)^2)
+
+ukb_20240209_bp_i0 <- read_tsv('../../Omics/Plasma_Proteomics/DATA/UKB/RAP/Cohorts/2024_02_09_AllUKB_Age_Sex_Height_Weight_10PCs_Instance0BP_smoking.tsv') %>%
+  select(ID=eid, contains(c('p4079','p94','p4080','p93','p6177', #Manual and annotated SBP/DBP readings - two measures per instance
+                            'p20116')))# Smoking status
+
+#If automated readings present, set manual readings (p93/94) to NA
+
+#For DBP
+ukb_20240209_bp_i0 <- ukb_20240209_bp_i0 %>%
+    mutate(p94_i0_a0=case_when(!is.na(p4079_i0_a0)|!is.na(p4079_i0_a1) ~ NA, #If automated reading present, ignore the manual readings
+                                 T ~p94_i0_a0 ),
+              p94_i0_a1=case_when(!is.na(p4079_i0_a0)|!is.na(p4079_i0_a1) ~ NA, #If automated reading present, ignore the manual readings
+                                 T ~p94_i0_a1))
+
+dbp_vals <- rowMeans(select(ukb_20240209_bp_i0,contains(c('p4079','p94'))),na.rm=T)#This takes the mean of the blood pressure measurements - there are 2x readings per individual 
+
+
+#For SBP
+ukb_20240209_bp_i0 <- ukb_20240209_bp_i0 %>%
+    mutate(p93_i0_a0=case_when(!is.na(p4080_i0_a0)|!is.na(p4080_i0_a1) ~ NA, #If automated reading present, ignore the manual readings
+                                 T ~p93_i0_a0 ),
+              p93_i0_a1=case_when(!is.na(p4080_i0_a0)|!is.na(p4080_i0_a1) ~ NA, #If automated reading present, ignore the manual readings
+                                 T ~p93_i0_a1))
+sbp_vals <- rowMeans(select(ukb_20240209_bp_i0,contains(c('p4080','p93'))),na.rm=T)
+
+ukb_20240209_bp_i0 <- select(ukb_20240209_bp_i0 ,ID, p6177_i0, p20116_i0) %>%
+  bind_cols(dbp=dbp_vals) %>%
+  bind_cols(sbp=sbp_vals)
+
+rm(dbp_vals, sbp_vals)
+
+#Add adjustment for presence of blood pressure medication as per p6177
+ukb_20240209_bp_i0  <- ukb_20240209_bp_i0  %>%
+  mutate(dbp = case_when(str_detect(p6177_i0, 'Blood pressure medication')~dbp + 10, 
+                         T~dbp),
+         sbp = case_when(str_detect(p6177_i0, 'Blood pressure medication')~ sbp + 15, 
+                         T~sbp)) %>%
+  mutate(pp=sbp-dbp)
+
+print(sum(ukb_20240209_bp_i0$pp<0, na.rm=T)) #i.e if sbp < dbp = red flag
+
+
+#Add to ukb_20240209_snptest_covariates
+ukb_20240209_snptest_covariates <- ukb_20240209_snptest_covariates %>%
+  left_join(select(ukb_20240209_bp_i0 , ID, dbp, 
+                   #sbp,pp, 
+                   smoking=p20116_i0), by='ID') %>%
+  mutate(smoking = ifelse(smoking =='Prefer not to answer', NA, smoking))
+
+rm(ukb_20240209_bp_i0)
+
+
+#Add T2D status (using i0 cases)
+t2d_cases <- read_tsv('../../Omics/Plasma_Proteomics/DATA/UKB/PROCESSED/1_I0/ukb_rap_T2D_20240209_i0cases.tsv')
+ukb_20240209_snptest_covariates <- ukb_20240209_snptest_covariates %>%
+  mutate(t2d = ifelse(ID %in% t2d_cases[[1]], T, F))
+rm(t2d_cases)
+
+write_tsv(ukb_20240209_snptest_covariates, '../1_data/UKB/PROCESSED/20240209_allUKB_age_sex_htwt_10pcs_dbp_t2d_smoking_cov.tsv')
+
+```
+### UKB Outcomes Formatter
+
+```{r}
+#' Calculate Left-Truncated Composite Outcome Status, Age/Time, and Filter Prevalent Cases
+#'
+#' Identifies the first composite outcome event occurring strictly after a baseline age,
+#' calculates the corresponding status and age/time-to-event, and **filters out
+#' individuals whose first-ever composite event occurred at or before the baseline age**
+#' (prevalent cases). Optionally calculates time since a specified start age.
+#'
+#' @details
+#' 1.  **Identify True First Event:** Determines the earliest age of any event listed
+#'     in `outcome_cols` for each individual, regardless of the baseline age
+#'     (`true_min_event_age`).
+#' 2.  **Identify First Post-Baseline Event:** Temporarily sets values in `outcome_cols`
+#'     to `NA` if they are less than or equal to the corresponding value in
+#'     `baseline_age_col`. Then finds the minimum remaining event age
+#'     (`min_post_baseline_event_age`).
+#' 3.  **Status Calculation:** Calculates the status (1 if any *post-baseline*
+#'     event occurred, 0 otherwise).
+#' 4.  **Age/Time Calculation:** Determines the composite age/time to the first
+#'     *post-baseline* event or censoring.
+#'     * If `tss = FALSE` (default): This is `min_post_baseline_event_age` if status is 1,
+#'       otherwise the censoring age (`censoring_age_col`).
+#'     * If `tss = TRUE`: This is the time elapsed between `start_age_col` and
+#'       the first *post-baseline* event or censoring time.
+#' 5.  **Left Truncation Filtering:** **Removes rows** where the `true_min_event_age`
+#'     (calculated in step 1) is less than or equal to the `baseline_age_col`. Only
+#'     individuals who were event-free at the time specified by `baseline_age_col`
+#'     are retained in the output.
+#'
+#' @param data A dataframe or tibble.
+#' @param outcome_cols A character vector of column names defining the composite outcome
+#'     (containing event ages or NA).
+#' @param status_col_name The desired name for the new status column (string).
+#' @param age_col_name The desired name for the new composite age/time column (string).
+#' @param baseline_age_col The name of the column containing the baseline age/time for
+#'     left-truncation filtering (string). Individuals with any event in `outcome_cols`
+#'     at or before this age will be removed.
+#' @param censoring_age_col The name of the column containing the censoring age/time
+#'     (string). Defaults to "censoring_age".
+#' @param tss Logical. If `TRUE`, calculates time since `start_age_col`. Defaults to `FALSE`.
+#' @param start_age_col Character string. Required and must be a valid column name
+#'     in `data` only if `tss = TRUE`. Defaults to `NULL`.
+#'
+#' @return A dataframe/tibble **containing only the subset of individuals who were
+#'   event-free at `baseline_age_col`**. This filtered dataframe includes the
+#'   two new composite columns (`status_col_name` and `age_col_name`) reflecting
+#'   events occurring *after* `baseline_age_col`. The `age_col_name` column
+#'   represents absolute age if `tss = FALSE`, or time-since-start if `tss = TRUE`.
+#'   The original `outcome_cols` within the returned dataframe are NOT modified
+#'   (unlike the previous version).
+#'
+#' @export
+#' @examples
+#' if (require(dplyr) && require(tibble) && require(matrixStats)) {
+#'   set.seed(123)
+#'   example_df <- tibble(
+#'     id = 1:10,
+#'     age_at_assessment = c(45, 53, 58, 59, 60, 65, 66, 68, 70, 71), # Baseline age
+#'     enrollment_age = c(40, 40, 42, 41, 45, 50, 50, 52, 55, 58),    # Start age for TSS
+#'     arrest_age = c(NA, 55, 57, 60, 58, NA, 70, NA, NA, 65),       # ID 3: 57 < 58 (prevalent), ID 5: 58 < 60 (prevalent)
+#'     scd_age = c(50, 52, NA, 62, NA, 68, 65, NA, 72, NA),           # ID 2: 52 < 53 (prevalent), ID 7: 65 < 66 (prevalent)
+#'     icd_age = c(NA, NA, 59, NA, 61, 69, NA, 71, NA, NA),
+#'     censoring_age = c(75, 60, 80, 61, 70, 72, 71, 78, 75, 77)
+#'   )
+#'
+#'   va_cols <- c("arrest_age", "scd_age", "icd_age")
+#'
+#'   # === Example 1: Standard calculation (absolute age) with filtering ===
+#'   # Expected behavior: ID 2, 3, 5, 7 should be removed as their first event
+#'   # (scd=52, arrest=57, arrest=58, scd=65) is <= baseline age (53, 58, 60, 66)
+#'   example_df_filtered_age <- add_composite_outcome_filtered(
+#'     data = example_df,
+#'     outcome_cols = va_cols,
+#'     status_col_name = "vacomp_status",
+#'     age_col_name = "vacomp_age",
+#'     baseline_age_col = "age_at_assessment",
+#'     censoring_age_col = "censoring_age",
+#'     tss = FALSE
+#'   )
+#'
+#'   print("Filtered Data (Absolute Age - selected cols):")
+#'   print(example_df_filtered_age %>% select(id, age_at_assessment, all_of(va_cols),
+#'                                            vacomp_status, vacomp_age, censoring_age))
+#'   # Expected remaining IDs: 1, 4, 6, 8, 9, 10
+#'   # Check values for remaining IDs:
+#'   # ID 1: Event scd=50 > 45. Status=1, Age=50.
+#'   # ID 4: Event arrest=60 > 59. Status=1, Age=60.
+#'   # ID 6: Event scd=68 > 65. Status=1, Age=68.
+#'   # ID 8: Event icd=71 > 68. Status=1, Age=71.
+#'   # ID 9: Event scd=72 > 70. Status=1, Age=72.
+#'   # ID 10: Event arrest=65 < 71. No post-baseline events. Status=0, Age=censoring_age=77.
+#'
+#'   # === Example 2: Time Since Start (TSS) calculation with filtering ===
+#'    example_df_filtered_tss <- add_composite_outcome_filtered(
+#'     data = example_df,
+#'     outcome_cols = va_cols,
+#'     status_col_name = "vacomp_status_tss",
+#'     age_col_name = "vacomp_time_since_enroll",
+#'     baseline_age_col = "age_at_assessment",
+#'     censoring_age_col = "censoring_age",
+#'     tss = TRUE,
+#'     start_age_col = "enrollment_age"
+#'   )
+#'
+#'   print("Filtered Data (Time Since Start - selected cols):")
+#'   print(example_df_filtered_tss %>% select(id, age_at_assessment, enrollment_age,
+#'                                             all_of(va_cols), vacomp_status_tss,
+#'                                             vacomp_time_since_enroll, censoring_age))
+#'   # Expected remaining IDs: 1, 4, 6, 8, 9, 10
+#'    # Check TSS values:
+#'    # ID 1: Time = 50 - 40 = 10
+#'    # ID 4: Time = 60 - 41 = 19
+#'    # ID 6: Time = 68 - 50 = 18
+#'    # ID 8: Time = 71 - 52 = 19
+#'    # ID 9: Time = 72 - 55 = 17
+#'    # ID 10: Time = 77 - 58 = 19 (censored)
+#' }
+add_composite_outcome_filtered <- function(data,
+                                      outcome_cols,
+                                      status_col_name,
+                                      age_col_name,
+                                      baseline_age_col,
+                                      censoring_age_col = "censoring_age",
+                                      tss = FALSE, # Use tss consistently
+                                      start_age_col = NULL) {
+
+  # --- Load Namespace ---
+  if (!requireNamespace("dplyr", quietly = TRUE)) {
+    stop("Package 'dplyr' must be installed to use this function.", call. = FALSE)
+  }
+  if (!requireNamespace("matrixStats", quietly = TRUE)) {
+    stop("Package 'matrixStats' must be installed to use this function.", call. = FALSE)
+  }
+
+  # --- Input Checks ---
+  # (Keeping checks mostly the same as original, ensuring column names are checked)
+   if (!is.data.frame(data)) {
+    stop("Input 'data' must be a data frame or tibble.", call. = FALSE)
+  }
+  if (!is.character(outcome_cols) || length(outcome_cols) == 0) {
+    stop("'outcome_cols' must be a non-empty character vector of column names.", call. = FALSE)
+  }
+  if (!is.character(status_col_name) || length(status_col_name) != 1 || !nzchar(status_col_name)) {
+    stop("'status_col_name' must be a single, non-empty string.", call. = FALSE)
+  }
+  if (!is.character(age_col_name) || length(age_col_name) != 1 || !nzchar(age_col_name)) {
+    stop("'age_col_name' must be a single, non-empty string.", call. = FALSE)
+  }
+  if (!is.character(baseline_age_col) || length(baseline_age_col) != 1 || !nzchar(baseline_age_col)) {
+    stop("'baseline_age_col' must be a single, non-empty string.", call. = FALSE)
+  }
+  if (!is.character(censoring_age_col) || length(censoring_age_col) != 1 || !nzchar(censoring_age_col)) {
+    stop("'censoring_age_col' must be a single, non-empty string.", call. = FALSE)
+  }
+  if (!is.logical(tss) || length(tss) != 1) {
+      stop("'tss' must be a single logical value (TRUE or FALSE).", call. = FALSE)
+  }
+  if (tss) {
+      if (is.null(start_age_col)) {
+          stop("If 'tss' is TRUE, 'start_age_col' must be provided.", call. = FALSE)
+      }
+      if (!is.character(start_age_col) || length(start_age_col) != 1 || !nzchar(start_age_col)) {
+          stop("If 'tss' is TRUE, 'start_age_col' must be a single, non-empty string.", call. = FALSE)
+      }
+  }
+
+  required_cols <- c(outcome_cols, censoring_age_col, baseline_age_col)
+  if (tss) {
+      required_cols <- c(required_cols, start_age_col)
+  }
+  missing_cols <- setdiff(required_cols, names(data))
+  if (length(missing_cols) > 0) {
+      stop("The following required columns are missing from 'data': ",
+           paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+   if (status_col_name %in% names(data)) {
+      warning("Output column '", status_col_name,
+              "' already exists in the data and will be overwritten.", call. = FALSE, immediate. = TRUE)
+  }
+  if (age_col_name %in% names(data)) {
+     warning("Output column '", age_col_name,
+             "' already exists in the data and will be overwritten.", call. = FALSE, immediate. = TRUE)
+  }
+
+  # --- Calculations ---
+
+  # Make a copy to avoid modifying the original input data directly
+  data_mod <- data
+
+  # Step 0: Calculate True Minimum Event Age (Before any modification)
+  true_min_event_age_vector <- {
+      temp_matrix <- as.matrix(data_mod %>% dplyr::select(dplyr::all_of(outcome_cols)))
+      min_vals <- matrixStats::rowMins(temp_matrix, na.rm = TRUE)
+      min_vals[is.infinite(min_vals)] <- NA_real_ # Convert Inf back to NA
+      min_vals
+  }
+  # Add temporarily to the data frame for filtering later
+  data_mod <- data_mod %>% dplyr::mutate(..true_min_event_age.. = true_min_event_age_vector)
+
+  # Step 1: Create Temporarily Modified Outcome Columns (Post-Baseline Only)
+  # We apply the modification logic but store results temporarily, not overwriting originals in data_mod
+  temp_outcome_data <- data_mod %>%
+    dplyr::transmute(
+      dplyr::across(
+        dplyr::all_of(outcome_cols),
+        # Function: if current value (.) is less than OR EQUAL TO baseline age, return NA
+        # Use <= because we want events *after* baseline age.
+        ~ dplyr::if_else(. <= .data[[baseline_age_col]], NA_real_, .),
+        .names = "..temp_{.col}" # Create temporary column names
+      )
+    )
+  temp_outcome_cols <- names(temp_outcome_data) # Get the names of the temp columns
+
+  # Step 2: Calculate Status (based on *post-baseline* events)
+  # Status is 1 if any *temporary post-baseline* outcome column is not NA.
+  data_mod <- data_mod %>%
+      dplyr::bind_cols(temp_outcome_data) %>% # Add temporary columns
+      dplyr::mutate(
+          "{status_col_name}" := as.numeric(dplyr::if_any(dplyr::all_of(temp_outcome_cols), ~!is.na(.)))
+      )
+
+  # Step 3: Calculate Minimum Post-Baseline Event Age
+  min_post_baseline_event_age_vector <- {
+      temp_matrix <- as.matrix(data_mod %>% dplyr::select(dplyr::all_of(temp_outcome_cols)))
+      min_vals <- matrixStats::rowMins(temp_matrix, na.rm = TRUE)
+      min_vals[is.infinite(min_vals)] <- NA_real_
+      min_vals
+  }
+
+ # Step 4: Determine the relevant 'end age' (first post-baseline event or censoring age)
+  end_age_vector <- dplyr::if_else( data_mod[[status_col_name]] == 1,
+                                      min_post_baseline_event_age_vector,
+                                      data_mod[[censoring_age_col]] )
+
+  # Step 5: Calculate Final Composite Age/Time based on 'tss' flag
+  if (tss) {
+      start_age_vector <- data_mod[[start_age_col]]
+      final_time_vector <- end_age_vector - start_age_vector
+      # Ensure time is not negative if censoring/event happens before start_age_col (shouldn't happen with proper data)
+      final_time_vector <- pmax(0, final_time_vector, na.rm = TRUE)
+      data_mod <- data_mod %>%
+          dplyr::mutate("{age_col_name}" := final_time_vector)
+  } else {
+      data_mod <- data_mod %>%
+          dplyr::mutate("{age_col_name}" := end_age_vector)
+  }
+
+  # Step 6: Perform Left Truncation Filtering
+  # Keep rows where there was no event ever OR the first true event occurred strictly AFTER baseline age
+  data_filtered <- data_mod %>%
+      dplyr::filter(is.na(..true_min_event_age..) | ..true_min_event_age.. > .data[[baseline_age_col]])
+
+  # --- Clean up temporary columns and Return ---
+  data_final <- data_filtered %>%
+      dplyr::select(-dplyr::all_of(c("..true_min_event_age..", temp_outcome_cols))) # Remove temporary cols
+
+  # Check if any rows remain after filtering
+  if (nrow(data_final) == 0) {
+      warning("All rows were removed by left-truncation filtering based on '", baseline_age_col, "'. Returning an empty data frame.", call. = FALSE)
+  } else if (nrow(data_final) < nrow(data)) {
+       message(nrow(data) - nrow(data_final), " rows removed due to events occurring at or before '", baseline_age_col, "'.")
+  }
+
+
+  return(data_final)
+}
+```
+
+
+```{r}
+#Import in ukb_outcomes
+ukb_outcomes <- data.table::fread('../../HCM_Severity/DATASETS/UKB/RAP/Outcomes/Processed/allukb_outcome_ages.tsv')
+data.table::setDF(ukb_outcomes) # Convert back to data frame if you prefer dplyr downstream
+
+ukb_outcomes_tbs <- vector('list', 2)
+
+# Define Overall Composite Columns
+# overall_outcome_cols <- names(ukb_outcomes)[which(names(ukb_outcomes) == "arrest_age_i46"):which(names(ukb_outcomes) == "HeartTransplant_mergeage")]
+
+# ukb_outcomes_tbs[[3]] <- add_composite_outcome_filtered(
+#    data = ukb_outcomes,
+#    outcome_cols = overall_outcome_cols,
+#    status_col_name = "overallcomp_status",
+#    age_col_name = "overallcomp_age",
+#    baseline_age_col = "age_attend_i0",
+#    tss=F
+# )
+
+# Define Ventricular Arrhythmia Composite Columns
+va_outcome_cols <- c('arrest_age_i46', 'scd_age_i46.1', 'ICDImplant_mergeage')
+
+ukb_outcomes_tbs[[1]] <- add_composite_outcome_filtered(
+   data = ukb_outcomes,
+   outcome_cols = va_outcome_cols,
+   status_col_name = "vacomp_status",
+   age_col_name = "vacomp_age",
+   baseline_age_col = "age_attend_i0",
+   tss=F, start_age_col = 'blood_sample_age'
+)
+
+# Define Heart Failure Column
+hf_outcome_cols <- c('hf_age_i50')
+
+ukb_outcomes_tbs[[2]]<- add_composite_outcome_filtered(
+   data = ukb_outcomes,
+   outcome_cols = hf_outcome_cols,
+   status_col_name = "hf_status",
+   age_col_name = "hf_age",
+   baseline_age_col = "age_attend_i0",
+   tss=F, start_age_col = 'blood_sample_age'
+)
+
+# print(ukb_outcomes)
+```
+
+
+Add the outcomes and the PRS to the ukb_covariates
+```{r}
+ukb_prs <- filter(ukb_prs, !str_detect(V2, '-')) %>% #Filter out the retracted individuals
+  dplyr::rename('cv_prs'=V5) %>%
+  mutate(cv_prs = scale(cv_prs)[,1]) #This scales over the entire UKB distribution
+
+#Filter out the Harper 40k controls
+harper_40k_ukb <- read_delim('../../HCM_IntScore/ukb_sets/harper_ukb_controls.sample') %>%
+  filter(PC1 != 'C')
+ukb_prs <- filter(ukb_prs, !V2 %in% harper_40k_ukb$ID_2)
+
+ukb_outcomes_tbs <- map(ukb_outcomes_tbs, ~filter(., !ID %in%harper_40k_ukb$ID_2)) #Filter each per outcome tb to remove Harper controls
+
+#Join the PRS
+ukb_tb <- ukb_20240209_snptest_covariates %>%
+  filter(ID %in% ukb_prs$V2) %>%
+  left_join(select(ukb_prs, ID = V2, cv_prs), by='ID')
+
+#Join the outcomes keeping only the individuals in each outcome (i.e left-truncated)
+ukb_outcomes_tbs <- map(ukb_outcomes_tbs, ~left_join(., ukb_tb, by='ID'))
+write_rds(ukb_outcomes_tbs, '../1_data/UKB/PROCESSED/20240209_allUKB_cov_scaledPRS_formattedOutcomes.rds')
+
+rm(ukb_20240209_snptest_covariates, ukb_prs)
+```
+Reimport data here for rerun:
+```{r}
+ukb_tb <- read_rds('../1_data/UKB/PROCESSED/20240209_allUKB_cov_scaledPRS_formattedOutcomes.rds')
+```
+
+### K-M Curves
+
+This plots KM curves to compare the incidence of HF at different thresholds of PRS cutoff in the UKB population.
+
+```{r}
+binning_variables <-c('cv_prs')
+quantile_threshold <- 0.95
+
+contvar_binner <- function(input_tb, variable, threshold, signif=F){ #Assumes split into two groups at the defined threshold
+  newcolname <- str_c(variable,'_',threshold,'thresh_categorical')
+  
+  output <- mutate(input_tb,
+                   temp=ifelse(eval(parse(text=variable)) >= threshold, str_c('>= ', threshold), str_c('< ', threshold)))
+  colnames(output)[ncol(output)] <- newcolname
+  
+  return(output)
+}
+
+for (var in binning_variables){
+  threshold <- signif(quantile(ukb_tb[var],probs=quantile_threshold,na.rm=T),3) #i.e the threshold
+  ukb_outcomes_tbs <- map(ukb_outcomes_tbs, ~contvar_binner(., var, threshold))
+}
+
+hist(ukb_tb$cv_prs)
+```
+
+```{r}
+km_survival_curv_plotter <- function(input_tb, categorical_var, status, outcome_var, plot_output_folder){
+  # categorical_var, status, and outcome_var are now expected as strings
+  print(paste('Plotting Kaplan Meier survival curves for', categorical_var))
+  
+  plot_types <- c('pct', 'event', 'cumhaz')
+  
+  # Construct the survival formula as a formula object
+  surv_formula <- as.formula(paste0("Surv(", outcome_var, ", ", status, ") ~ ", categorical_var))
+  
+  for (type in plot_types){
+    # Fit the survival model using the constructed formula
+    surv_fit <- survfit(surv_formula, data = input_tb)
+    
+    # Update the call in the fitted object so that the data and formula are directly accessible.
+    surv_fit$call$data <- input_tb
+    surv_fit$call$formula <- surv_formula
+    
+    # Generate the survival plot using ggsurvplot
+    plot <- ggsurvplot(
+      fit = surv_fit,
+      fun = type,
+      pval = TRUE,
+      conf.int = TRUE,
+      risk.table = 'abs_pct',
+      risk.table.col = 'strata',
+      linetype = 'strata',
+      surv.median.line = 'hv',
+      xlab = 'Age',
+      ncensor.plot = TRUE
+    )
+    
+    print(plot)
+    
+    # Create output folder if it does not exist
+    if (!dir.exists(plot_output_folder)){
+      dir.create(plot_output_folder, recursive = TRUE)
+    }
+    
+    # Save plot to a PDF file
+    pdf(file.path(plot_output_folder, paste0(categorical_var, '_kaplan_', type, '.pdf')), width = 12, height = 9)
+    print(plot, newpage = FALSE)
+    dev.off()
+  }
+}
+```
+
+```{r}
+outcomes_of_interest <- c('1_VA','2_HF','3_OV')
+
+plotpaths <- str_c('../3_output/4_MR_validation/UKB/PLOTS/4_SURVIVAL/1_UNIVARIATE_KM/', outcomes_of_interest)
+
+catvars_of_interest <- str_c(binning_variables, '_', threshold,'thresh_categorical')
+
+#Run for UKB - Overall Composite
+# walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_tb, ., 'overallcomp_status','overallcomp_age',plotpaths[3]))
+
+#Run for UKB - VA Composite
+walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_outcomes_tbs[[1]], ., 'vacomp_status','vacomp_age',plotpaths[1]))
+
+#Run for UKB - HF outcome only
+walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_outcomes_tbs[[2]], ., 'hf_status','hf_age',plotpaths[2]))
+```
+### Cox Regression
+
+#### B: Baseline = Attendance Date; Timescale = Age; Additional Covariates
+
+```{r}
+multivariate_cox <- function(input_tb, marginal_predictor, covariates, status, outcome_var, baseline_age='age_attend_i0', outcome_levels=c('VACOMP','HF'), return_predictor_results_only=T, return_model=F){ #Return only the coefficient and p-values for the marginal_predictor
+  
+  x <- str_c(c(covariates,marginal_predictor), collapse='+')
+  y <- str_c('Surv(',baseline_age, ',', outcome_var,',',status,')')
+  formula <- as.formula(paste(y,'~',x))
+  
+  multivariate_cox <- coxph(formula, data=input_tb)
+  print(summary(multivariate_cox))
+  
+  x<- summary(multivariate_cox)
+  
+  if(isTRUE(return_model)){
+    return(multivariate_cox)
+  }
+  
+  if(isFALSE(return_predictor_results_only)){ 
+  
+    p.value<-signif(x$coef[1:nrow(x$coef),5], digits=3)
+    beta<-signif(x$coef[1:nrow(x$coef),1], digits=3);#coeficient beta
+    HR <-signif(x$coef[1:nrow(x$coef),2], digits=3);#exp(beta) = hazard ratio
+    HR.confint.lower <- signif(x$conf.int[,"lower .95"], 3)
+    HR.confint.upper <- signif(x$conf.int[,"upper .95"],3)
+    se_beta <- signif(x$coef[1:nrow(x$coef),3], digits=3)
+    vars <- rownames(x$coef)
+  } else{ #This only works if single marginal predictor
+    
+    p.value<-signif(x$coef[nrow(x$coef),5], digits=3)
+    beta<-signif(x$coef[nrow(x$coef),1], digits=3);#coeficient beta
+    HR <-signif(x$coef[nrow(x$coef),2], digits=3);#exp(beta) = hazard ratio
+    HR.confint.lower <- signif(x$conf.int[,"lower .95"][nrow(x$coef)], 3)
+    HR.confint.upper <- signif(x$conf.int[,"upper .95"][nrow(x$coef)],3)
+    se_beta <- signif(x$coef[nrow(x$coef),3], digits=3)
+    vars <- rownames(x$coef)[nrow(x$coef)]
+
+  }
+  
+  res<-bind_cols(vars,beta, se_beta, HR, HR.confint.lower, HR.confint.upper, p.value) %>%
+    mutate(predictor=str_to_upper(vars)) %>%
+    mutate(outcome = factor(
+      str_to_upper(str_match(outcome_var,'(.+)_age')[,2]),levels=outcome_levels, ordered=T
+    ))
+  
+  names(res)<-c('var',"beta",'se_beta', "HR", "Lower_95CI_HR","Upper_95CI_HR", 
+            "p.value", 'predictor','outcome')
+  
+  return(res)
+}
+```
+
+```{r}
+vars <- c('cv_prs')
+covariates <- c('sex','pc1','pc2','pc3','pc4','pc5', 'dbp','bmi','smoking')
+statuses <- c('vacomp_status','hf_status')
+surv_ages <- c('vacomp_age','hf_age')
+
+#Run marginal Cox regression models for each plasma protein with each outcome of interest
+multivariate_cox_results <- c(
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[1]],.,covariates,statuses[1],surv_ages[1])),
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[2]],.,covariates,statuses[2],surv_ages[2]))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_outcomes_tbs[[3]],.,covariates,statuses[3],surv_ages[3]))
+) %>%
+  bind_rows() %>%
+  filter(!is.na(p.value))
+
+#Actually output the multivariate Cox model objects themselves
+multivariate_cox_models <- c(
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[1]],.,covariates,statuses[1],surv_ages[1], return_model=T)),
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[2]],.,covariates,statuses[2],surv_ages[2], return_model=T))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_outcomes_tbs[[3]],.,covariates,statuses[3],surv_ages[3], return_model=T))
+)
+names(multivariate_cox_models) <-(expand_grid(vars,surv_ages) %>% mutate(surv_ages = factor(surv_ages, levels=c('vacomp_age','hfc_age'))) %>% arrange(surv_ages) %>% mutate(name = str_c(vars, surv_ages, sep='_x_')))$name
+```
+
+
+```{r}
+multivariate_coxph_plotter <- function(multivariate_results, plot_output_path, output_name, selected_vars = c('cv_prs'),FDR=5, xlim='', ylim='', scaling =F){
+  
+  if (!is.numeric(FDR)){ #Apply Bonferroni
+    pval_threshold = 0.05/nrow(multivariate_results)
+    mtc <- 'Bonferroni'
+  } else{
+    multivariate_results <- mutate(multivariate_results, p.value=p.adjust(p.value, method='BH'))
+    pval_threshold <- FDR/100
+    mtc <- str_c('FDR ',FDR, '%',sep='')
+  }
+  
+  multivariate_results <- multivariate_results %>%
+    filter(var %in% selected_vars) %>%
+    mutate(Label = ifelse(p.value <= pval_threshold, str_c(predictor, ' x ', outcome), ''))
+
+  multivariate_plot <- ggplot(multivariate_results, aes(HR,-log10(p.value)))+
+    geom_hline(yintercept=-log10(pval_threshold), linetype='dashed', alpha=0.5)+
+    geom_point(aes(col=predictor, shape=outcome),alpha=0.75, size=3)+
+    geom_errorbarh(aes(xmin=Lower_95CI_HR, xmax=Upper_95CI_HR,col=predictor, shape=outcome),alpha=0.75, height=0.2)+
+    geom_vline(xintercept=1, linetype='dashed',alpha=0.5)+
+    geom_text_repel(aes(col=predictor,label=Label))+
+    scale_colour_brewer(name='Predictor',palette='Set1')+
+    scale_shape_discrete(name='Outcome')+
+    xlab(ifelse(scaling == F, 'Hazard Ratio', 'Hazard Ratio per SD'))+
+    ylab(ifelse(mtc=='Bonferroni','-log10 (Wald-test p value)', '-log10 (Adjusted Wald-test p value)'))+
+    labs(title=str_wrap(str_c('Multivariate Cox Regression analysis for ', nrow(multivariate_results), ' tests')),caption=str_c(mtc, ' p-value Threshold Indicated; Error Bars = 95% CI'))+
+    theme(legend.position="right")
+  # +   guides(col=guide_legend(nrow=1, byrow=TRUE)) 
+  
+  if (!identical(xlim,'')){
+    multivariate_plot <- multivariate_plot+
+          scale_x_continuous(n.breaks=10, limits=xlim, expand = expansion(0,0))
+  }
+  if(!identical(ylim, '')){
+    multivariate_plot <- multivariate_plot +
+      scale_y_continuous(limits=ylim, expand = expansion(0,0))
+  }
+  
+  print(multivariate_plot)
+  
+    if (isFALSE(dir.exists(plot_output_path))){
+      dir.create(plot_output_path, recursive=T)
+    }
+  
+  ggsave(str_c(plot_output_path, 'cox_multivariate_', output_name,'.png'), dpi=600, width=9, height=6)
+  
+  return(multivariate_results)
+}
+
+path <- str_c('../3_output/4_MR_validation/UKB/PLOTS/4_SURVIVAL/2_COXPH/')
+
+multivariate_cox_results <- multivariate_cox_results %>%
+  mutate(predictor = factor(predictor, labels=c('PRS')))
+
+multivariate_coxph_plotter(multivariate_cox_results,path, 'prs_alloutcomes_fdr5', scaling = T)
+
+write_tsv(multivariate_cox_results, str_c(path,'multivariate_cox_results.tsv'))
+```
+
+## Observational Analyses -  HCM Status vs. Incident HF
+```{r}
+hcm_diagnoses <- readRDS('../../Omics/Plasma_Proteomics/DATA/UKB/PROCESSED/ukb_rap_i0_5Y_cases.rds')[[1]]
+
+ukb_outcomes_tbs<- read_rds('../1_data/UKB/PROCESSED/20240209_allUKB_cov_scaledPRS_formattedOutcomes.rds')
+
+#Add in HCM indicator variable if diagnosed before age_attend_i0
+ukb_outcomes_tbs <- map(ukb_outcomes_tbs, ~left_join(., select(hcm_diagnoses, ID, min_diag_date)) %>% 
+                          mutate(min_diag_date = as_date(min_diag_date), dob_approx=as_date(dob_approx)) %>%
+                          mutate(min_diag_age = as.numeric((min_diag_date - dob_approx)/363.25)) %>% 
+                          mutate(hcm_baseline_status = case_when(min_diag_age <= age_attend_i0~T, min_diag_date > age_attend_i0 ~F, is.na(min_diag_date) ~ F)))
+```
+
+### KM Curves
+
+```{r}
+outcomes_of_interest <- c('1_VA','2_HF','3_OV')
+
+plotpaths <- str_c('../3_output/4_MR_validation/UKB/PLOTS/4_SURVIVAL/1_UNIVARIATE_KM/', outcomes_of_interest)
+
+catvars_of_interest <- c('hcm_baseline_status')
+
+#Run for UKB - Overall Composite
+# walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_tb, ., 'overallcomp_status','overallcomp_age',plotpaths[3]))
+
+#Run for UKB - VA Composite
+walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_outcomes_tbs[[1]], ., 'vacomp_status','vacomp_age',plotpaths[1]))
+
+#Run for UKB - HF outcome only
+walk(catvars_of_interest, ~km_survival_curv_plotter(ukb_outcomes_tbs[[2]], ., 'hf_status','hf_age',plotpaths[2]))
+```
+### Cox Regression
+
+```{r}
+vars <- c('hcm_baseline_status')
+covariates <- c('sex','pc1','pc2','pc3','pc4','pc5', 'dbp','bmi','smoking')
+statuses <- c('vacomp_status','hf_status')
+surv_ages <- c('vacomp_age','hf_age')
+
+#Run marginal Cox regression models for each plasma protein with each outcome of interest
+multivariate_cox_results <- c(
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[1]],.,covariates,statuses[1],surv_ages[1])),
+  map(vars, ~multivariate_cox(ukb_outcomes_tbs[[2]],.,covariates,statuses[2],surv_ages[2]))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_outcomes_tbs[[3]],.,covariates,statuses[3],surv_ages[3]))
+) %>%
+  bind_rows() %>%
+  filter(!is.na(p.value))
+
+path <- str_c('../3_output/4_MR_validation/UKB/PLOTS/4_SURVIVAL/2_COXPH/')
+
+multivariate_cox_results <- multivariate_cox_results %>%
+  mutate(predictor = factor(predictor, labels=c('HCM')))
+
+multivariate_coxph_plotter(multivariate_cox_results,path, 'baselineHCM_alloutcomes_fdr5',selected_vars = c('hcm_baseline_statusTRUE'))
+
+write_tsv(multivariate_cox_results, str_c(path,'baselineHCM_multivariate_cox_results.tsv'))
+
+```
+
+
+
+
+## Archive
+
+#### A: Baseline = Birth; Timescale = Age
+
+```{r}
+covariates <- c('sex','pc1','pc2','pc3','pc4','pc5')
+vars <- c('cv_prs') 
+# statuses <- c('vacomp_status','hfcomp_status',
+# 'overallcomp_status')
+statuses <- c( 'hf_status')
+# surv_ages <- c('vacomp_age', 'hf_age','hfcomp_age',
+#                'overallcomp_age')
+surv_ages <-c('hf_age')
+```
+
+```{r}
+multivariate_cox <- function(input_tb, marginal_predictor, covariates, status, outcome_var, outcome_levels=c('VACOMP','HF','OVERALLCOMP'), return_predictor_results_only=T, return_model=F){ #Return only the coefficient and p-values for the marginal_predictor
+  
+  x <- str_c(c(covariates,marginal_predictor), collapse='+')
+  y <- str_c('Surv(',outcome_var,',',status,')')
+  formula <- as.formula(paste(y,'~',x))
+  
+  multivariate_cox <- coxph(formula, data=input_tb)
+  print(summary(multivariate_cox))
+  
+  x<- summary(multivariate_cox)
+  
+  if(isTRUE(return_model)){
+    return(multivariate_cox)
+  }
+  
+  if(isFALSE(return_predictor_results_only)){ 
+  
+    p.value<-signif(x$coef[1:nrow(x$coef),5], digits=3)
+    beta<-signif(x$coef[1:nrow(x$coef),1], digits=3);#coeficient beta
+    HR <-signif(x$coef[1:nrow(x$coef),2], digits=3);#exp(beta) = hazard ratio
+    HR.confint.lower <- signif(x$conf.int[,"lower .95"], 3)
+    HR.confint.upper <- signif(x$conf.int[,"upper .95"],3)
+    se_beta <- signif(x$coef[1:nrow(x$coef),3], digits=3)
+    vars <- rownames(x$coef)
+  } else{ #This only works if single marginal predictor
+    
+    p.value<-signif(x$coef[nrow(x$coef),5], digits=3)
+    beta<-signif(x$coef[nrow(x$coef),1], digits=3);#coeficient beta
+    HR <-signif(x$coef[nrow(x$coef),2], digits=3);#exp(beta) = hazard ratio
+    HR.confint.lower <- signif(x$conf.int[,"lower .95"][nrow(x$coef)], 3)
+    HR.confint.upper <- signif(x$conf.int[,"upper .95"][nrow(x$coef)],3)
+    se_beta <- signif(x$coef[nrow(x$coef),3], digits=3)
+    vars <- rownames(x$coef)[nrow(x$coef)]
+
+  }
+  
+  res<-bind_cols(vars,beta, se_beta, HR, HR.confint.lower, HR.confint.upper, p.value) %>%
+    mutate(predictor=str_to_upper(vars)) %>%
+    mutate(outcome = factor(
+      str_to_upper(str_match(outcome_var,'(.+)_age')[,2]),levels=outcome_levels, ordered=T
+    ))
+  
+  names(res)<-c('var',"beta",'se_beta', "HR", "Lower_95CI_HR","Upper_95CI_HR", 
+            "p.value", 'predictor','outcome')
+  
+  return(res)
+}
+```
+
+```{r}
+#Run marginal Cox regression models for each plasma protein with each outcome of interest
+multivariate_cox_results <- c(
+  map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[1],surv_ages[1]))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[2],surv_ages[2])),
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[3],surv_ages[3]))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[4],surv_ages[4]))
+) %>%
+  bind_rows() %>%
+  filter(!is.na(p.value))
+
+#Actually output the multivariate Cox model objects themselves
+multivariate_cox_models <- c(
+  map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[1],surv_ages[1], return_model=T))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[2],surv_ages[2], return_model=T)),
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[3],surv_ages[3], return_model=T))
+  # ,
+  # map(vars, ~multivariate_cox(ukb_tb,.,covariates,statuses[4],surv_ages[4], return_model=T))
+)
+names(multivariate_cox_models) <-(expand_grid(vars,surv_ages) %>% mutate(surv_ages = factor(surv_ages, levels=c('vacomp_age','hf_age','overallcomp_age'))) %>% arrange(surv_ages) %>% mutate(name = str_c(vars, surv_ages, sep='_x_')))$name
+```
+
+### Observational: HCM Diagnosis = Time-Dependent Covariate
+Specifically, given that the HCM diagnosis/incidence is also a time-dependent variable (as per age-dependent penetrance of rare variants for example), I need to include it as a time-dependent covariate in the Cox regression formula.
+
+This requires the use of tmerge to adjust the dataset to one which is constructed as a series of intervals from start to stop whereby each time interval is defined as either the interval from birth to HCM diagnosis or the interval from birth to HF incidence (if HF occurs prior to HCM diagnosis).
+
+### Time-Dependent Covariates Version
+
+```{r}
+# Initialize the dataset for tmerge with baseline data and the final outcome time
+# Use age-from-birth as the time scale
+td_data <- tmerge(data1 = ukb_tb, # Initial dataset
+                  data2 = ukb_tb, # Can be the same or another dataset for events/covariates
+                  id = ID,            # Patient identifier
+                  tstart = age_attend_i0, # Start of follow-up time (using age) i.e birth for this biobank study
+                  tstop = hf_age, # End of follow-up time (age at HF or censoring)
+                  hf_event = event(hf_age)) # Define the outcome event (HF) based on hf_age
+
+# Add the time-dependent HCM status as time-dependent covariate.
+# It turns 'on' at hcm_diag_age
+td_data <- tmerge(data1 = td_data,       # Use the result from the previous tmerge
+                  data2 = ukb_tb,    # Source of the HCM diagnosis age
+                  id = ID,               # Patient identifier
+                  hcm_status = tdc(min_diag_age)) # Create hcm_status, turns on at hcm_diag_age
+```
+
+
+```{r}
+td_data <- add_baseline_as_tdc(
+  td_data = td_data, # Input data with required columns
+  start_data = ukb_tb,
+  id_col = "ID",
+  recruitment_age_col = "age_attend_i0",
+  covariate_col = "bmi", # The column with the value measured at recruitment
+  new_tdc_name = "td_bmi",          # The name for the new TDC column in the output
+  value_before_recruitment = NA      # Value before recruitment_age (e.g., 0 or NA)
+)
+
+td_data <- add_baseline_as_tdc(
+  td_data = td_data, # Input data with required columns
+  start_data = ukb_tb,
+  id_col = "ID",
+  recruitment_age_col = "age_attend_i0",
+  covariate_col = "dbp", # The column with the value measured at recruitment
+  new_tdc_name = "td_dbp",          # The name for the new TDC column in the output
+  value_before_recruitment = NA      # Value before recruitment_age (e.g., 0 or NA)
+)
+
+# Rename columns to match the Surv formula expectation (start_age, stop_age)
+colnames(td_data)[colnames(td_data) == "tstart"] <- "start_age"
+colnames(td_data)[colnames(td_data) == "tstop"] <- "stop_age"
+
+print(head(td_data))
+```
+
+
+```{r}
+#Perform Cox regression with the time-dependent covariates
+x <- str_c(c(c('sex','pc1','pc2','pc3','pc4','pc5', 'td_dbp','td_bmi'),'hcm_status'), collapse='+')
+y <- 'Surv(start_age, stop_age, hf_event)'
+formula <- as.formula(paste(y,'~',x))
+
+cox_model_age_scale <- coxph(formula, data = td_data, id = ID)
+print(summary(cox_model_age_scale))
+  
+```

@@ -10,6 +10,8 @@ import pandas as pd
 import hashlib
 import yaml
 
+configfile: 'config_gwas_summstats_harmoniser.yaml'
+
 # --- Input File Partitioning ---
 # This section separates input files into two groups based on their path.
 
@@ -62,6 +64,8 @@ rule reformat_hcmr_gwas:
     output:
         reformatted_gwas_gz = "{folder}/{basename}_gwas_ssf.tsv.gz",
         meta_yaml = temp("{folder}/{basename}_gwas_ssf.tsv.gz-meta.yaml")
+    resources:
+        mem_mb = 16000
     shell:
         """
         # Use a python script for robust reformatting and YAML creation

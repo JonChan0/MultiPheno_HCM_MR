@@ -1,55 +1,142 @@
 '''
-This outlines the Snakemake pipeline to harmonise all input GWAS summary statistics using EBI GWAS Catalog's GWAS Summstats Harmoniser
+This outlines the Snakemake pipeline to harmonise all input GWAS summary statistics using EBI GWAS Catalog's GWAS Summstats Harmoniser.
+This version includes a conditional rule to reformat specific GWAS outputs instead of harmonising them.
 Author: Jonathan Chan
 Date: 2025-02-10
 '''
 
 import os
+import pandas as pd
+import hashlib
+import yaml
 
-configfile: 'config_gwas_summstats_harmoniser.yaml'
+# --- Input File Partitioning ---
+# This section separates input files into two groups based on their path.
 
-input_tsv_gz_paths = config['input_tsv_gz_files']
-#Extract out the basename with the full directory path i.e just without the .tsv.gz extension
-# input_tsv_gz_paths = [os.path.splitext(os.path.splitext(input_tsv_gz_path)[0])[0] for input_tsv_gz_path in input_tsv_gz_paths]
-input_tsv_gz_folders = [os.path.dirname(x) for x in input_tsv_gz_paths]
-# print(input_tsv_gz_folders)
+HCMR_PATH = '/well/PROCARDIS/jchan/hcmr_ukbb/popgen/2_gwas/output/gwas/hcmr/'
+UKB_PATH = '/well/PROCARDIS/jchan/hcmr_ukbb/popgen/2_gwas/output/gwas/ukb/'
+all_input_paths = config['input_tsv_gz_files']
 
-#Extract out the basename without the full directory path, only the filename without the extension. There are two extensions to remove i.e convert ...tsv.gz to ...
-input_tsv_gz_basenames = [os.path.splitext(os.path.splitext(os.path.basename(x))[0])[0] for x in input_tsv_gz_paths]
+# HCMR GWAS files to be reformatted which have the format of phenotype_manhattan_rsid2.tsv
+HCMR_paths = [p for p in all_input_paths if HCMR_PATH in p]
+HCMR_folders = [os.path.dirname(p) for p in HCMR_paths]
+#Grab the basename without the full directory path, only the filename without the extension but also without _manhattan_rsid2.tsv
+HCMR_basenames = [os.path.splitext(os.path.splitext(os.path.basename(p))[0])[0].replace('_manhattan_rsid2', '') for p in HCMR_paths]
+
+UKB_paths = [p for p in all_input_paths if UKB_PATH in p]
+UKB_folders = [os.path.dirname(p) for p in UKB_paths]
+#Grab the basename without the full directory path, only the filename without the extension but also without _manhattan_rsid2.tsv
+UKB_basenames = [os.path.splitext(os.path.splitext(os.path.basename(p))[0])[0].replace('_manhattan_rsid', '') for p in UKB_paths]
+
+# Standard files to be harmonised which have the format of phenotype.tsv.gz
+standard_paths = [p for p in all_input_paths if HCMR_PATH not in p and UKB_PATH not in p]
+standard_folders = [os.path.dirname(p) for p in standard_paths]
+standard_basenames = [os.path.splitext(os.path.splitext(os.path.basename(p))[0])[0] for p in standard_paths]
+
+# Create a complete list of all basenames and a map to find their original folder
+all_basenames = standard_basenames + HCMR_basenames + UKB_basenames
+all_folders = standard_folders + HCMR_folders + UKB_folders
+basename_to_folder_map = dict(zip(all_basenames, all_folders))
+
+hcmr_only_output = expand('{folder}/{basename}_gwas_ssf.tsv.gz', zip, folder=HCMR_folders, basename=HCMR_basenames)
+ukb_only_output = expand('{folder}/{basename}_gwas_ssf.tsv.gz', zip, folder=UKB_folders, basename=UKB_basenames)
+common_output = [
+    expand(config['base_output_folder']+'{basename}_gwas_ssf/final/{basename}_gwas_ssf.h.tsv.gz', basename=all_basenames),
+    config['desired_output_folder']+'harmonisation_summary.tsv'
+]
 
 rule all:
     input: 
-        standardised_gwas_summstats = expand("{input_tsv_gz_folder}/{input_tsv_gz_basename}_gwas_ssf.tsv.gz", zip, input_tsv_gz_folder=input_tsv_gz_folders, input_tsv_gz_basename=input_tsv_gz_basenames),
-        harmonised_gwas_summstats = expand(config['base_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}_gwas_ssf.h.tsv.gz', input_tsv_gz_basename=input_tsv_gz_basenames),
-        summary_file = config['desired_output_folder']+'harmonisation_summary.tsv'
+        hcmr_only_output + ukb_only_output + common_output
 
+# --- Specialised Rule for OG Data ---
+# Rule to reformat 'manhattan_rsid2.tsv' from HCMR or 'manhattan_rsid.tsv' from UKB into the GWAS-SSF format.
+# This rule runs ONLY for inputs which have the HCMR_PATH or UKB_PATH in their path.
+rule reformat_hcmr_gwas:
+    input:
+        raw_gwas = lambda wildcards: (
+            f"{wildcards.folder}/{wildcards.basename}_manhattan_rsid2.tsv"
+            if "hcmr" in wildcards.basename.lower()
+            else f"{wildcards.folder}/{wildcards.basename}_manhattan_rsid.tsv"
+        )
+    output:
+        reformatted_gwas_gz = "{folder}/{basename}_gwas_ssf.tsv.gz",
+        meta_yaml = temp("{folder}/{basename}_gwas_ssf.tsv.gz-meta.yaml")
+    shell:
+        """
+        # Use a python script for robust reformatting and YAML creation
+        python -c "
+import pandas as pd
+import hashlib
+import os
+
+# To escape braces for Snakemake, you must double them: {{ }}
+col_map = {{
+    'rsid': 'variant_id', 'chromosome': 'chromosome', 'position': 'base_pair_location',
+    'allele_B': 'effect_allele', 'allele_A': 'other_allele', 'eaf': 'effect_allele_frequency',
+    'beta': 'beta', 'beta_se': 'standard_error', 'pval': 'p_value', 'all_total': 'n_total'
+}}
+
+# Read and reformat data
+df = pd.read_csv('{input.raw_gwas}', sep='\\s+') # Using whitespace separator
+df_reformatted = df.rename(columns=col_map)[list(col_map.values())]
+df_reformatted.to_csv('{output.reformatted_gwas_gz}', sep='\\t', index=False, compression='gzip', na_rep='NA')
+
+# Calculate MD5 checksum
+with open('{output.reformatted_gwas_gz}', 'rb') as f:
+    md5_hash = hashlib.md5(f.read()).hexdigest()
+
+# Create YAML metadata file
+# Here, we escape the f-string braces with {{ }} so Snakemake ignores them.
+# The inner {output.reformatted_gwas_gz} is left as-is so Snakemake can format it.
+yaml_content = f'''# Study meta-data
+date_metadata_last_modified: 2023-02-09
+
+# Genotyping Information
+genome_assembly: GRCh37
+coordinate_system: 1-based
+genotyping_technology:
+  - Genome-wide genotyping array
+
+# Summary Statistic information
+data_file_name: {{os.path.basename(r'{output.reformatted_gwas_gz}')}}
+file_type: GWAS-SSF v0.1
+data_file_md5sum: {{md5_hash}}
+
+# Harmonization status
+is_harmonised: false
+is_sorted: false
+'''
+with open('{output.meta_yaml}', 'w') as f:
+    f.write(yaml_content)
+"
+        """
 
 #Rule 1 = Standardise the headings and columns via gwas-ssf by GWAS Summstats Tools
-rule gwas_ssf:
-    input: "{input_tsv_gz_folder}/{input_tsv_gz_basename}.tsv.gz"
-    output:
-        gwas_sumstats_json = temp("{input_tsv_gz_folder}/{input_tsv_gz_basename}.json"),
-        standardised_gwas_summstats_tsv = temp("{input_tsv_gz_folder}/{input_tsv_gz_basename}_gwas_ssf.tsv"),
-        standardised_gwas_summstats_tsv_gz = "{input_tsv_gz_folder}/{input_tsv_gz_basename}_gwas_ssf.tsv.gz"
-    conda: 'gms'
-    resources:
-        mem_mb=8000
-    shell:
-        '''
-        gwas-ssf format {input} --generate_config --config_out {output.gwas_sumstats_json}
-        gwas-ssf format {input} --apply_config --config_in {output.gwas_sumstats_json} -o {output.standardised_gwas_summstats_tsv}
-        gzip {output.standardised_gwas_summstats_tsv} -c > {output.standardised_gwas_summstats_tsv_gz}
-        '''
+# rule gwas_ssf:
+#     input: "{folder}/{basename}.tsv.gz"
+#     output:
+#         gwas_sumstats_json = temp("{folder}/{basename}.json"),
+#         standardised_gwas_summstats_tsv = temp("{folder}/{basename}_gwas_ssf.tsv"),
+#         standardised_gwas_summstats_tsv_gz = "{folder}/{basename}_gwas_ssf.tsv.gz"
+#     conda: 'gms'
+#     resources:
+#         mem_mb=8000
+#     shell:
+#         '''
+#         gwas-ssf format {input} --generate_config --config_out {output.gwas_sumstats_json}
+#         gwas-ssf format {input} --apply_config --config_in {output.gwas_sumstats_json} -o {output.standardised_gwas_summstats_tsv}
+#         gzip {output.standardised_gwas_summstats_tsv} -c > {output.standardised_gwas_summstats_tsv_gz}
+#         '''
 
-#Rule 2 = Run GWAS summstats harmoniser using the above input files
 rule gwas_summstats_harmoniser:
     input:
-        gwas_summstats=lambda wildcards: f"{input_tsv_gz_folders[input_tsv_gz_basenames.index(wildcards.input_tsv_gz_basename)]}/{wildcards.input_tsv_gz_basename}_gwas_ssf.tsv.gz"
+        # The lambda function uses the map to find the correct input path for any given basename.
+        gwas_summstats=lambda wildcards: f"{basename_to_folder_map[wildcards.basename]}/{wildcards.basename}_gwas_ssf.tsv.gz"
     output:
-        harmonised_output_folder = directory(config['base_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/'),
-        harmonised_gwas_summstats = config['base_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}_gwas_ssf.h.tsv.gz',
-        output_logfiles = config['base_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}_gwas_ssf.running.log'
-    # conda: 'gms'
+        harmonised_output_folder = directory(config['base_output_folder']+'{basename}_gwas_ssf/'),
+        harmonised_gwas_summstats = config['base_output_folder']+'{basename}_gwas_ssf/final/{basename}_gwas_ssf.h.tsv.gz',
+        output_logfiles = config['base_output_folder']+'{basename}_gwas_ssf/final/{basename}_gwas_ssf.running.log'
     resources:
         mem_mb = 40000
     params:
@@ -68,51 +155,30 @@ rule gwas_summstats_harmoniser:
         --to_build '38'
 
         echo Successfully completed harmonisation of {input.gwas_summstats}
-        # mv {output.harmonised_output_folder} -t {params.output_folder}
         '''
 
-#I manually move all the folders over to the desired output folder because smk not working for some reason.
-
-#Rule 3 = Parse the '.running.log' file to check if the harmonisation has succeded correctly given the a successful harmonisation will have the string 'Result  SUCCESS_HARMONIZATION' in the file
-#If this is the case, please report out the percentage of variants successfully harmonised by reporting out the string on the line prior to 'sites successfully harmonised.' e.g '97.39% ( 16263377 of 16698468 ) sites successfully harmonised.'
-#Iterate over all the different phenotypes to output a single summary file with the percentage of variants successfully harmonised for each phenotype and whether or not each phenotype was successfully harmonised
-#For each line in the output file, print first the phenotype (basename) and then Yes or No depending on whether the harmonisation was successful or not and in brackets the percentage of variants successfully harmonised
-#You need to iterate over all the '.running.log' files to do this
-
+# Rule 3 = Parse all '.running.log' files to generate a single summary report
 rule summarise_harmonisation:
     input:
-        log_files = expand(config['base_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}_gwas_ssf.running.log', input_tsv_gz_basename=input_tsv_gz_basenames)
+        # Collect log files from ALL harmonisation jobs.
+        lHCMR_files = expand(config['base_output_folder']+'{basename}_gwas_ssf/final/{basename}_gwas_ssf.running.log', basename=all_basenames)
     output:
         summary_file = config['desired_output_folder']+'harmonisation_summary.tsv'
     run:
         summary_data = []
-        for log_file in input.log_files:
-            basename = os.path.basename(log_file).split('_gwas_ssf')[0]
-            with open(log_file, 'r') as f:
+        for lHCMR_file in input.lHCMR_files:
+            basename = os.path.basename(lHCMR_file).split('_gwas_ssf')[0]
+            with open(lHCMR_file, 'r') as f:
                 lines = f.readlines()
                 success = any("Result\tSUCCESS_HARMONIZATION" in line for line in lines)
                 if success:
-                    percentage_line =  [line for line in lines if 'sites successfully harmonised' in line]
-                    summary_data.append(f"{basename}\tYes\t({percentage_line})")
+                    percentage_line = [line for line in lines if 'sites successfully harmonised' in line]
+                    clean_percentage = percentage_line[0].strip() if percentage_line else "N/A"
+                    summary_data.append(f"{basename}\tYes\t{clean_percentage}")
                 else:
                     summary_data.append(f"{basename}\tNo\t(N/A)")
         
         with open(output.summary_file, 'w') as f:
-            f.write("Phenotype\tHarmonised\tPercentage\n")
-            for line in summary_data:
+            f.write("Phenotype\tHarmonised\tPercentage Harmonised\n")
+            for line in sorted(summary_data): # Sort for consistent output
                 f.write(line + "\n")
-
-#Rule 4 = Run GCTA-COJO to output independent SNPs from the harmonised GWAS summary statistics but only for certain summary statistic files as determined in the config.yaml
-
-# rule gcta_cojo:
-#     input:
-#         harmonised_gwas_summstats=lambda wildcards: config['desired_output_folder']+wildcards.input_tsv_gz_basename+'_gwas_ssf/final/'+wildcards.input_tsv_gz_basename+'_gwas_ssf.h.tsv.gz'
-#     output:
-#         independent_snps = config['desired_output_folder']+'{input_tsv_gz_basename}_gwas_ssf/final/{input_tsv_gz_basename}.jma'
-#     resources:
-#         mem_mb = 8000,
-#         threads = 8
-#     shell:
-#         '''
-#         1_gcta_cojo.sh {input.harmonised_gwas_summstats} {output.independent_snps}
-#         '''

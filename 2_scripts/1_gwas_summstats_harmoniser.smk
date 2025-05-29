@@ -63,7 +63,7 @@ rule reformat_hcmr_gwas:
         )
     output:
         reformatted_gwas_gz = "{folder}/{basename}_gwas_ssf.tsv.gz",
-        meta_yaml = temp("{folder}/{basename}_gwas_ssf.tsv.gz-meta.yaml")
+        meta_yaml = "{folder}/{basename}_gwas_ssf.tsv.gz-meta.yaml"
     resources:
         mem_mb = 16000
     shell:

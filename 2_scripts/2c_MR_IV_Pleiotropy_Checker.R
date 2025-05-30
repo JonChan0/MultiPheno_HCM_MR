@@ -273,6 +273,15 @@ phenotypes <- c('HCM','AF','DBP','BMI','T2D','SmokingInitiation','T1time','maxLA
 
 walk2(instrument_files, phenotypes,~main2(.x,.y,'../3_output/1_MR_QC/pleiotropy_check/'))
 
+hcmr_instrument_files <- list.files('../1_data/gwas_associations/', pattern='hcmr[^\\.]+\\.xlsx', full.names = T)
+hcmr_phenotypes <- str_match(basename(hcmr_instrument_files), '([^\\.]+)_associations\\.xlsx')[,2]
+
+ukb_instrument_files <- list.files('../1_data/gwas_associations/', pattern='ukb[^\\.]+\\.xlsx', full.names = T)
+ukb_phenotypes <- str_match(basename(ukb_instrument_files), '([^\\.]+)_associations\\.xlsx')[,2]
+
+walk2(hcmr_instrument_files, hcmr_phenotypes,~main2(.x,.y,'../3_output/1_MR_QC/pleiotropy_check/'))
+walk2(ukb_instrument_files, ukb_phenotypes,~main2(.x,.y,'../3_output/1_MR_QC/pleiotropy_check/'))
+
 # PLEIOTROPY FILTER ---------------------------------------------------------------
 
 #DEFINE THE RED FLAG TRAITS 
@@ -289,7 +298,131 @@ dbp_exception <- c('Body mass index')
 
 ## OVERALL RED FLAGS
 redflags <- c(list('',hcm_outcome_redflags,dbp_exception,bmi_exception), rep(list(hcm_outcome_redflags), length(phenotypes)-4)) #i.e no red flag traits for HCM instruments
+hcmr_redflags <- rep(list(hcm_outcome_redflags), length(hcmr_phenotypes))
+ukb_redflags <- rep(list(hcm_outcome_redflags), length(ukb_phenotypes))
 rm(bmi_exception, dbp_exception)
 
+#Run for public GWAS summstats
 pwalk(list(instrument_files, phenotypes, redflags),~snp_pleio_filter(..1,..2,'../3_output/1_MR_QC/pleiotropy_check/',..3))
 
+#Run for internal HCMR and UKB GWAS summstats
+pwalk(list(hcmr_instrument_files, hcmr_phenotypes, hcmr_redflags),~snp_pleio_filter(..1,..2,'../3_output/1_MR_QC/pleiotropy_check/',..3))
+pwalk(list(ukb_instrument_files, ukb_phenotypes, ukb_redflags),~snp_pleio_filter(..1,..2,'../3_output/1_MR_QC/pleiotropy_check/',..3))
+
+
+# MR YAML WRITER----------------------------------------------------------------
+#' Create a YAML configuration file for Mendelian Randomization analysis.
+#'
+#' This function generates a YAML file with specified parameters for a two-sample
+#' Mendelian Randomization analysis, typically involving HCM (Hypertrophic Cardiomyopathy)
+#' and another non-HCM phenotype.
+#'
+#' @param non_hcm_phenotype A string representing the name of the non-HCM phenotype
+#'   (e.g., "BMI"). This will be used as d1_exposure and d2_outcome.
+#' @param non_hcm_exposure_gwas_path A string, the file path to the GWAS summary statistics
+#'   for the non-HCM phenotype. This will be used for d1_exposure_path and d2_outcome_path.
+#' @param non_hcm_instruments_path A string, the file path to the instruments file for
+#'   the non-HCM phenotype when it acts as an exposure (for d1_instruments).
+#' @param output_yaml_file_path A string, the desired file path where the YAML
+#'   configuration file will be saved (e.g., "config.yaml").
+#'
+#' @return Invisibly returns TRUE if successful, otherwise stops with an error.
+#' @examples
+#' \dontrun{
+#' create_mr_yaml_config(
+#'   non_hcm_phenotype = "BMI",
+#'   non_hcm_exposure_gwas_path = "sidorenko24_bmi_gwas_ssf/final/sidorenko24_bmi_gwas_ssf.h.tsv.gz",
+#'   non_hcm_instruments_path = "../1_data/gwas_associations/1_pleio_pruned/BMI_gwas_associations.xlsx",
+#'   output_yaml_file_path = "bmi_hcm_mr_config.yaml"
+#' )
+#'
+#' create_mr_yaml_config(
+#'   non_hcm_phenotype = "SBP",
+#'   non_hcm_exposure_gwas_path = "path/to/sbp_gwas.tsv.gz",
+#'   non_hcm_instruments_path = "../1_data/gwas_associations/1_pleio_pruned/SBP_gwas_associations.xlsx",
+#'   output_yaml_file_path = "sbp_hcm_mr_config.yaml"
+#' )
+#' }
+create_mr_yaml_config <- function(non_hcm_phenotype,
+                                  non_hcm_exposure_gwas_path,
+                                  non_hcm_instruments_path,
+                                  output_yaml_file_path,
+                                  hcm_instruments_path = '../1_data/gwas_associations/1_pleio_pruned/HCM_to__gwas_associations.xlsx') {
+  
+  # Required package for YAML writing
+  if (!requireNamespace("yaml", quietly = TRUE)) {
+    stop("Package 'yaml' is required but not installed. Please install it using install.packages('yaml').")
+  }
+  # No need to explicitly call library(yaml) if using ::, but good for clarity if used frequently
+  # library(yaml) 
+  
+  # --- Define static values based on the provided YAML structure ---
+  # These values are fixed according to your example
+  static_output_path_val <- '../3_output/2_MR/'
+  static_ld_eur_bed_file_val <- '../../hcmr_ukbb/popgen/5_MR/pipeline_files/1kg_v3_ld/EUR'
+  static_plink_binary_path_val <- '/well/PROCARDIS/jchan/bin/plink'
+  
+  # Details for d1 (Direction 1: non-HCM phenotype -> HCM)
+  static_d1_outcome_phenotype_val <- 'HCM'
+  static_d1_outcome_path_val <- 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
+  static_d1_ld_clump_val <- 'FALSE' # R logical FALSE becomes 'false' in YAML output
+  
+  # Details for d2 (Direction 2: HCM -> non-HCM phenotype)
+  static_d2_exposure_phenotype_val <- 'HCM'
+  static_d2_exposure_path_val <- 'tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
+  
+  # Construct the path for d2_instruments dynamically
+  # This path is for instruments when HCM is the exposure and non-HCM phenotype is the outcome
+  # Example: '../1_data/gwas_associations/1_pleio_pruned/HCM_to_BMI_gwas_associations.xlsx'
+  d2_instruments_path_val <- hcm_instruments_path
+  static_d2_ld_clump_val <- 'FALSE' # R logical FALSE becomes 'false' in YAML output
+  
+  # --- Construct the list that represents the YAML structure ---
+  config_data_list <- list(
+    output_path = static_output_path_val,
+    ld_eur_bed_file = static_ld_eur_bed_file_val,
+    plink_binary_path = static_plink_binary_path_val,
+    
+    # Direction 1: non-HCM phenotype (exposure) -> HCM (outcome)
+    d1_exposure = non_hcm_phenotype,
+    d1_outcome = static_d1_outcome_phenotype_val,
+    d1_exposure_path = non_hcm_exposure_gwas_path, # User-provided path for non-HCM GWAS
+    d1_outcome_path = static_d1_outcome_path_val,  # Fixed path for HCM GWAS
+    d1_instruments = non_hcm_instruments_path,     # User-provided path for non-HCM instruments
+    d1_ld_clump = static_d1_ld_clump_val,
+    
+    # Direction 2: HCM (exposure) -> non-HCM phenotype (outcome)
+    d2_exposure = static_d2_exposure_phenotype_val,
+    d2_outcome = non_hcm_phenotype,                 # Non-HCM phenotype is the outcome here
+    d2_exposure_path = static_d2_exposure_path_val,  # Fixed path for HCM GWAS (as exposure)
+    d2_outcome_path = non_hcm_exposure_gwas_path,    # User-provided path for non-HCM GWAS (as outcome)
+    d2_instruments = d2_instruments_path_val,        # Dynamically constructed path
+    d2_ld_clump = static_d2_ld_clump_val
+  )
+  
+  # --- Write the list to a YAML file ---
+  tryCatch({
+    yaml::write_yaml(config_data_list, file = output_yaml_file_path)
+    message(paste0("Successfully created YAML configuration file at: ", output_yaml_file_path))
+    invisible(TRUE) # Return TRUE invisibly on success
+  }, error = function(e) {
+    # Provide a more informative error message
+    stop(paste0("Failed to write YAML file to '", output_yaml_file_path, "'. Error: ", e$message))
+  })
+}
+
+hcmr_instrument_pleiopruned <- str_c(dirname(hcmr_instrument_files),'/1_pleio_pruned/',hcmr_phenotypes, '_gwas_associations.xlsx')
+ukb_instrument_pleiopruned <- str_c(dirname(ukb_instrument_files),'/1_pleio_pruned/',ukb_phenotypes, '_gwas_associations.xlsx')
+
+hcmr_gwas_summstats <- str_c(hcmr_phenotypes, '_gwas_ssf/final/',hcmr_phenotypes,'_gwas_ssf.h.tsv.gz')
+ukb_gwas_summstats <- str_c(ukb_phenotypes, '_gwas_ssf/final/',ukb_phenotypes,'_gwas_ssf.h.tsv.gz')
+
+hcmr_yaml_outputpath <- str_c('../1_data/input_configs/',hcmr_phenotypes, '_and_HCM.yaml')
+ukb_yaml_outputpath <- str_c('../1_data/input_configs/',ukb_phenotypes, '_and_HCM.yaml')
+
+
+pwalk(list(hcmr_phenotypes, hcmr_gwas_summstats, hcmr_instrument_pleiopruned, hcmr_yaml_outputpath),
+      ~create_mr_yaml_config(..1,..2,..3,..4))
+
+pwalk(list(ukb_phenotypes, ukb_gwas_summstats, ukb_instrument_pleiopruned, ukb_yaml_outputpath),
+      ~create_mr_yaml_config(..1,..2,..3,..4))

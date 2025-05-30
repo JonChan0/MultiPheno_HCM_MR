@@ -45,42 +45,48 @@ write_tsv(mr_results, str_c(results_folder, 'summary_MR_results.tsv'))
 Define the grouping of the phenotypes into different parameter groups here.
 
 ```{r}
-crf_vars <- c('BMI', 'CRP','DrinksPerWeek','SmokingInitiation','T2D', 'DBP','eGFR')
-ecg_vars <- c('PRinterval','PwaveDuration','QRSinterval','QTcInterval','RRinterval','QTinterval')
-fibrosis_vars <- c('T1time')
+crf_vars <- c('BMI','SmokingInitiation','T2D', 'DBP')
+fibrosis_vars <- c('T1time', 'hcmr2_ecvfwhole','hcmr2_lge_total')
 LV_diastolic_vars <- c('longdsr','radialdsr', 'maxLAVi')
-RV_vars <- c('minRAAi','maxRAAi', 'RA_Frac_Change','RVEDVI','RVEF','RVESVI','RVSVI')
-related_disease_vars <- c('AF', 'HF')
+related_disease_vars <- c('AF')
+pp_vars <- c('hcmr_NTproBNP','hcmr_gal3','hcmr_TnT','hcmr_IL1RL1','hcmr_cicp','hcmr_mmp1',
+             'ukb_NTproBNP','ukb_BNP','ukb_gal3','ukb_TnI','ukb_IL1RL1','ukb_mmp1')
 ```
 
 ```{r}
 sensitivity_or_results_importer <- function(folder){
-  mainline_results <- read.table(str_c(folder, '/',str_match(folder,'\\/([^\\/]+)_to_')[,2], '_mr_results_sensitivity_oddsratio.tsv')) %>%
+  mainline_results <- read.table(str_c(folder, '/',str_match(folder,'\\/([^\\/]+)_to_')[,2], '_mr_results_sensitivity_oddsratio.tsv'), header=T)
+  
+  if(nrow(mainline_results) == 0){
+    return(tibble())
+  } else{
+      mainline_results <- mainline_results %>%
     select(-id.exposure, -id.outcome) %>%
   mutate(exposure = ifelse(exposure=='bmi', 'BMI', exposure),
          outcome = ifelse(outcome=='bmi', 'BMI', outcome)) %>%
     mutate(exposure_outcome = str_c(exposure, outcome, sep=' -> '))
   
   return(mainline_results)
+    
+  }
 }
 
-mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_importer(.)) %>% bind_rows() %>%
+mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_importer(.)) %>%
+  bind_rows() %>%
   filter(method=='Inverse variance weighted') %>%
   mutate(mtc_pval = p.adjust(pval, method='holm')) %>%
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
     mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
                                         exposure %in% related_disease_vars ~'Related Diseases',
-                                        exposure %in% ecg_vars ~ 'ECG',
+                                        exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        exposure %in% RV_vars ~ 'RV Function')) %>%
+                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
                                         outcome %in% related_disease_vars ~'Related Diseases',
-                                        outcome %in% ecg_vars ~ 'ECG',
+                                        outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        outcome %in% RV_vars ~ 'RV Function')) %>%
+                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(nonHCM_phenogroup = case_when(is.na(exposure_phenogroup) ~ outcome_phenogroup, #This creates the phenogroup for the non-HCM variable in the analysis
                                        is.na(outcome_phenogroup) ~ exposure_phenogroup, 
                                        T~NA)) %>%
@@ -199,16 +205,14 @@ mr_results <- mr_results %>%
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
                                         exposure %in% related_disease_vars ~'Related Diseases',
-                                        exposure %in% ecg_vars ~ 'ECG',
+                                        exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        exposure %in% RV_vars ~ 'RV Function')) %>%
+                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
                                         outcome %in% related_disease_vars ~'Related Diseases',
-                                        outcome %in% ecg_vars ~ 'ECG',
+                                        outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        outcome %in% RV_vars ~ 'RV Function')) %>%
+                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(nonHCM_phenogroup = case_when(is.na(exposure_phenogroup) ~ outcome_phenogroup, #This creates the phenogroup for the non-HCM variable in the analysis
                                        is.na(outcome_phenogroup) ~ exposure_phenogroup, 
                                        T~NA)) %>%
@@ -234,8 +238,7 @@ print(summary_scatter)
 ggsave('../3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=600, width=9, height=6)
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
-#Likewise with DBP and BMI which are normalised using the SD from the original publication.
-#Likweise with Thanaj DSR
+#Likewise with DBP and BMI and Thanaj DSR which are normalised using the SD from the original publication.
 ```
 
 Also include the plot with 95% confidence interval.
@@ -258,6 +261,8 @@ print(summary_scatter_confint)
 ggsave('../3_output/3_summary_plots/MR_summary_plot_confint.png',summary_scatter_confint, dpi=600, width=9, height=6)
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
+#Likewise with DBP and BMI and Thanaj DSR which are normalised using the SD from the original publication.
+#The plasma proteins are all RINT in their GWAS so represent SD.
 ```
 
 I also repeat the above summary plot but with the discrete variables transformed from Log(Odds) to Odds Ratio.
@@ -304,9 +309,9 @@ sig_mr_results_or <- mr_results_or %>%
 
 #Create a faceted plot where I have the top plot = per-unit OR and the bottom plot = per-SD OR
 if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
-  persd_exposure_vars <- c(RV_vars, 'BMI','DBP','longdsr','radialdsr')
+  persd_exposure_vars <- c(pp_vars,'BMI','DBP','longdsr','radialdsr')
 } else{
-  persd_exposure_vars <- c(RV_vars)
+  persd_exposure_vars <- c(pp_vars)
 }
 
 sig_mr_results_or <- sig_mr_results_or %>%

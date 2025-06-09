@@ -180,7 +180,7 @@ if(nrow(harmonised_data)==1){
 mainline_mr_results <- mr(harmonised_data, method_list=mainline_mr_method_list) #Runs MR with a bunch of different methods- call mr_method_list() to see\
 
 #Sensitivity analyses
-sensitivity_mr_method_list <- c('mr_ivw','mr_weighted_median','mr_weighted_mode','mr_egger_regression')
+sensitivity_mr_method_list <- c(mainline_mr_method_list,'mr_weighted_median','mr_weighted_mode','mr_egger_regression')
 sensitivity_mr_results <- mr(harmonised_data, method_list=sensitivity_mr_method_list)
 pleiotropy_results <- mr_pleiotropy_test(harmonised_data) #MR Egger test for directional pleiotropy via evaluating MR Egger intercept difference from 0
 res_single <- mr_singlesnp(harmonised_data) #Single-SNP analysis

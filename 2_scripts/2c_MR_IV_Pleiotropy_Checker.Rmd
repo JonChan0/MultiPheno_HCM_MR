@@ -44,6 +44,8 @@ importer <- function(path){
   else if (str_detect(path, '\\.xlsx')){ #CVD HugeAmp format
     input_assocs <- readxl::read_excel(path)
     colnames(input_assocs) <- c('rsID')
+    input_assocs <- input_assocs %>%
+      select('rsID')
   } 
   
   return(input_assocs)
@@ -202,6 +204,19 @@ main <- function(path, pheno){ #For V2G
 
 ### Pleiotropy Evaluation
 
+This section computes what is a suitable threshold for pleiotropy cutoff.
+```{r}
+#This is the number of MTC-passed sig. traits from PheWAS of 10k randomly sampled SNPs from OTG.
+nulldist <- read_rds('../1_data/pleiotropy_threshold/nulldist_10k.rds')
+hist(nulldist) #Very skewed distribution
+
+quantile(nulldist,0.95,na.rm=T)
+quantile(nulldist,0.99,na.rm=T)
+quantile(nulldist, 0.995, na.rm=T)
+quantile(nulldist, 0.999, na.rm=T)
+```
+
+
 This leverages Open Target Genetics PheWAS to evaluate SNP's pleiotropy and plots out the other traits which the SNP has statistical significant association with (defined by pval_cutoff).
 
 ```{r}
@@ -287,7 +302,7 @@ fdr_corrector <- function(processed_data_tb, fdr_cutoff=0.05){
   return(output)
 }
 
-scatter_plotter <- function(processed_data_tb, pheno, output_path, qval_cutoff=0.05, priority_cutoff=50){
+scatter_plotter <- function(processed_data_tb, pheno, output_path, qval_cutoff=0.05, priority_cutoff=47){
   theme_set(theme_classic())
   
   snp <- unique(processed_data_tb$SNP)
@@ -392,7 +407,8 @@ instrument_files <- c('../1_data/gwas_associations/tadros25_hcm_nonMTAG_associat
                       '../1_data/gwas_associations/thanaj22_long_dsr_associations.tsv',
                       '../1_data/gwas_associations/thanaj22_radial_dsr_associations.tsv'
                       )
-phenotypes <- c('HCM','AF','DBP','BMI','T2D','SmokingInitiation','T1time','maxLAVi','longDSR','radialDSR')
+phenotypes <- c('HCM' ,'AF','DBP','BMI','T2D','SmokingInitiation','T1time','maxLAVi','longDSR','radialDSR'
+                )
 
 walk2(instrument_files, phenotypes,~main2(.x,.y,'../3_output/1_MR_QC/pleiotropy_check/'))
 
@@ -423,12 +439,12 @@ walk2(subgroup_hcm_instrument_files,subgroup_hcm_phenotypes,~main2(.x,.y,'../3_o
 
 This performs filtering of SNPs which are pleiotropic via 2 criteria
 
-1) Excess pleiotropy with many other unique traits
+1) Excess pleiotropy with many other unique traits (threshold = 47 corresponding to 99.5% percentile from a 10k random sample from OTG)
 2) Pleiotropy with certain red-flag traits which are causally associated with the outcome.
 
 ```{r}
 
-snp_pleio_filter <- function(og_path, pheno, output_path,red_flags='',pheno2='', n_cutoff=50){
+snp_pleio_filter <- function(og_path, pheno, output_path,red_flags='',pheno2='', n_cutoff=47){
   
   input_tb <- read_tsv(str_c(output_path,pheno,'_phewas_FDRfiltered.tsv'))
   

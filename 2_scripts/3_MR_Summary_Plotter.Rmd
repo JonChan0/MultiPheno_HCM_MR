@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggrepel)
+library(patchwork)
 rm(list=ls())
 
 theme_set(theme_classic())
@@ -73,8 +74,8 @@ sensitivity_or_results_importer <- function(folder){
 
 mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_importer(.)) %>%
   bind_rows() %>%
-  filter(method=='Inverse variance weighted') %>%
-  mutate(mtc_pval = p.adjust(pval, method='holm')) %>%
+  filter(method %in% c('Wald ratio','Inverse variance weighted')) %>%
+  mutate(mtc_pval = p.adjust(pval, method='BH')) %>%
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
     mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
@@ -195,12 +196,12 @@ if(isTRUE(thanaj_dsr_normalisation)){
 
 ## Summary Plotting
 
-This plots a volcano plot of all the MR analyses with Holm's p-value correction for multiple testing correction (controls FWER but with greater power than Bonferroni and also does not assume independence between tests).
+This plots a volcano plot of all the MR analyses with BH's p-value correction for multiple testing correction (controls FWER but with greater power than Bonferroni and also does not assume independence between tests).
 
 ```{r}
 #Apply multiple testing correction to the tests
 mr_results <- mr_results %>%
-  mutate(mtc_pval = p.adjust(pval, method='holm')) %>%
+  mutate(mtc_pval = p.adjust(pval, method='BH')) %>%
   mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
@@ -323,7 +324,7 @@ sig_mr_results_or <- sig_mr_results_or %>%
   mutate(outcome_plot_group = ifelse(outcome %in% c('HCM',related_disease_vars,'T2D','SmokingInitiation'), 'OR', 'beta')) %>%
   mutate(exposure_outcome=factor(exposure_outcome))
 
-forest_plot1 <- ggplot(sig_mr_results_or)+
+forest_plot_overall <- ggplot(sig_mr_results_or)+
   geom_point(aes(x=b, y= exposure_outcome))+
   geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
@@ -332,9 +333,50 @@ forest_plot1 <- ggplot(sig_mr_results_or)+
   labs(col='Non-HCM Phenotype Group')+
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
 
-print(forest_plot1)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot1, dpi=600, width=9, height=6)
+print(forest_plot_overall)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot_overall, dpi=600, width=9, height=6)
 ```
+
+I also plot the forest plot broken down into 2 plots instead and where HCM = exposure, do per doubling odds(HCM) and where it is outcome, do OR(HCM).
+
+```{r}
+forest_plot_hcmexposure <- ggplot(filter(sig_mr_results_or, str_detect(exposure, 'HCM')))+
+  geom_point(aes(x=b*log(2), y= exposure_outcome))+
+  geom_errorbar(aes(xmin=lo_ci*log(2), xmax=up_ci*log(2), y=exposure_outcome))+
+  geom_vline(xintercept=0, col='black', linetype='dashed')+
+  xlab('Change in Outcome (SD) per Doubling of Odds(HCM)')+
+  ylab('Exposure -> Outcome')+
+  labs(col='Non-HCM Phenotype Group')
+
+print(forest_plot_hcmexposure)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_hcmexposure.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
+
+forest_plot_hcmoutcome <- ggplot(filter(sig_mr_results_or, str_detect(outcome, 'HCM')))+
+  geom_point(aes(x=or, y= exposure_outcome))+
+  geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome))+
+  geom_vline(xintercept=1, col='black', linetype='dashed')+
+  xlab('Per-SD Odds Ratio(HCM)')+
+  ylab('Exposure -> Outcome')+
+  labs(col='Non-HCM Phenotype Group')
+
+print(forest_plot_hcmoutcome)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
+
+combined_forest_plot <- forest_plot_hcmexposure / forest_plot_hcmoutcome
+print(combined_forest_plot)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_combined.png',combined_forest_plot, dpi=600, width=9, height=6)
+
+#N.B To get the numerical values
+test <- mr_results_or %>%
+  filter(exposure_outcome %in% c('HCM -> hcmr_NTproBNP',
+                                    'HCM -> hcmr_TnT',
+                                    'HCM -> radialdsr',
+                                    'HCM -> longdsr')) %>%
+  mutate(b = b*log(2), lo_ci = lo_ci*log(2), up_ci = up_ci * log(2)) %>%
+  select(-contains('or'))
+  
+```
+
 
 ## Subgroup Analyses
 
@@ -346,21 +388,19 @@ analyses <- list.dirs(results_folder, recursive=F, full.names=F)
 analyses <- analyses[!analyses %in% c('main_analysis_notsig')]
 
 subgroup_mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_importer(.)) %>% bind_rows() %>%
-  filter(method=='Inverse variance weighted') %>%
+  filter(method %in% c('Wald ratio','Inverse variance weighted')) %>%
   mutate(label = ifelse(pval <= 0.05, exposure_outcome, '')) %>%
   mutate(group = ifelse(str_detect(exposure, 'HCM'), 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
     mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
                                         exposure %in% related_disease_vars ~'Related Diseases',
-                                        exposure %in% ecg_vars ~ 'ECG',
+                                        exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        exposure %in% RV_vars ~ 'RV Function')) %>%
+                                        exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
                                         outcome %in% related_disease_vars ~'Related Diseases',
-                                        outcome %in% ecg_vars ~ 'ECG',
+                                        outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
-                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function',
-                                        outcome %in% RV_vars ~ 'RV Function')) %>%
+                                        outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(nonHCM_phenogroup = case_when(is.na(exposure_phenogroup) ~ outcome_phenogroup, #This creates the phenogroup for the non-HCM variable in the analysis
                                        is.na(outcome_phenogroup) ~ exposure_phenogroup, 
                                        T~NA)) %>%
@@ -386,9 +426,9 @@ subgroup_mr_results_or <- perunit_to_perSD_normaliser(subgroup_mr_results_or, bm
 subgroup_mr_results_or <- perunit_to_perSD_normaliser(subgroup_mr_results_or, thanaj_dsr_subgroup_sds, type='mr_results_or')
 
 if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
-  persd_vars <- c(RV_vars, 'BMI','DBP','longdsr','radialdsr')
+  persd_vars <- c(pp_vars, 'BMI','DBP','longdsr','radialdsr')
 } else{
-  persd_vars <- c(RV_vars)
+  persd_vars <- c(pp_vars)
 }
 
 ```
@@ -401,24 +441,33 @@ subgroup_mr_results_or <- subgroup_mr_results_or %>%
                                         outcome %in% persd_vars ~ 'Continuous Outcome')) %>%
   mutate(exposure_plot_group = case_when(exposure %in% persd_vars~ 'Per-SD Exposure',
                                          exposure %in% c('HCM','HCMsarcneg','HCMsarcpos',related_disease_vars,'T2D','SmokingInitiation') ~ 'Per-Log(Odds) Exposure')) %>%
-  mutate(exposure_outcome=factor(exposure_outcome)) %>%
-  mutate(sarcgroup = ifelse(str_detect(exposure_outcome,'sarcneg'), 'Sarcomere-Negative', 'Sarcomere-Positive'))
+  mutate(sarcgroup = ifelse(str_detect(exposure_outcome,'sarcneg'), 'Sarcomere-Negative', 'Sarcomere-Positive')) %>%
+  mutate(exposure = ifelse(str_detect(exposure, 'HCM'),'HCM',exposure)) %>% #This simplifies the label to HCM
+  mutate(outcome = ifelse(str_detect(outcome, 'HCM'),'HCM',outcome)) %>%  #So that you have 2 points per y-label
+  mutate(exposure_outcome = str_c(exposure, ' -> ', outcome)) %>%
+  mutate(exposure_outcome=factor(exposure_outcome))
 
 forest_plot_subgroup_hcm_exposure<- ggplot(filter(subgroup_mr_results_or, str_detect(exposure, 'HCM')))+
-  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=sarcgroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup))+
+  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, outcome), col=sarcgroup),
+             position = position_dodge(width = 0.35))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup),
+                position = position_dodge(width = 0.35),
+                width = 0.25)+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab('Change in Outcome (Log(Odds)) for Discrete & SD for Continuous ) per Change in Exposure')+
+  xlab('Change in Outcome (SD) per Change in Exposure')+ #Because currently only continuous outcomes
   ylab('Exposure -> Outcome')+
   labs(col='Sarcomere Subroup',  caption='95% confidence intervals shown')+
   facet_wrap(vars(outcome_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_exposure)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=9, height=6)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=6, height=3)
 
 forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
-  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=sarcgroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup))+
+  geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=sarcgroup),
+             position = position_dodge(width = 0.35))+
+  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome,col=sarcgroup),
+                position = position_dodge(width = 0.35),
+                width=0.25)+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
   xlab('Change in Outcome (Log(Odds)) per Change in Exposure')+
   ylab('Exposure -> Outcome')+
@@ -426,9 +475,40 @@ forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_det
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_outcome)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome.png',forest_plot_subgroup_hcm_outcome, dpi=600, width=9, height=6)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome.png',forest_plot_subgroup_hcm_outcome, dpi=600, width=6, height=3)
 ```
 
+```{r}
+#Plot the increase in phenotpye per doubling of odds of HCM for HCM = Exposure as per Burgess et al, 2019
+forest_plot_subgroup_hcm_exposure_doubleOdds<- ggplot(filter(subgroup_mr_results_or, str_detect(exposure, 'HCM')))+
+  geom_point(aes(x=b * log(2), y= forcats::fct_reorder(exposure_outcome, outcome), col=sarcgroup),
+             position = position_dodge(width = 0.35))+
+  geom_errorbar(aes(xmin=lo_ci* log(2), xmax=up_ci* log(2), y=exposure_outcome,col=sarcgroup),
+                position = position_dodge(width = 0.35),
+                width = 0.25)+
+  geom_vline(xintercept=0, col='black', linetype='dashed')+
+  xlab('Change in Outcome (SD) per Doubling of Odds of HCM')+ #Because currently only continuous outcomes
+  ylab('Exposure -> Outcome')+
+  labs(col='Sarcomere Subroup',  caption='95% confidence intervals shown')
+
+print(forest_plot_subgroup_hcm_exposure_doubleOdds)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure_doubleOdds.png',forest_plot_subgroup_hcm_exposure_doubleOdds, dpi=600, width=6, height=3)
+
+#Plot the Odds Ratio of HCM Outcome instead of the Log(Odds Ratio)
+forest_plot_subgroup_hcm_outcome_OR<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
+  geom_point(aes(x=or, y= forcats::fct_reorder(exposure_outcome, exposure), col=sarcgroup),
+             position = position_dodge(width = 0.35))+
+  geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome,col=sarcgroup),
+                position = position_dodge(width = 0.35),
+                width=0.25)+
+  geom_vline(xintercept=1, col='black', linetype='dashed')+
+  xlab('Odds Ratio(HCM) per Increase in Exposure (SD)')+
+  ylab('Exposure -> Outcome')+
+  labs(col='Sarcomere Subgroup',  caption='95% confidence intervals shown')
+
+print(forest_plot_subgroup_hcm_outcome_OR)
+ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome_OR.png',forest_plot_subgroup_hcm_outcome_OR, dpi=600, width=6, height=3)
+```
 
 ## Misc.
 

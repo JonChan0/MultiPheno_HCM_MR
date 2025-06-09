@@ -23,5 +23,17 @@ elif [[ "$type" == 'subgroup' ]]; then
         echo "Carrying out UNIdirectional MR on ${file}"
         snakemake --profile bmrc_profile_smk5  --snakefile 2_unidirectional_MR.smk --configfile $file --rerun-incomplete
     done
+
+elif [[ "$type" == 'sensitivity' ]]; then
+    for file in ../1_data/input_configs/sensitivity/*.yaml
+    do
+        echo "Carrying out UNIdirectional MR on ${file}"
+        snakemake --profile bmrc_profile_smk5  --snakefile 2_unidirectional_MR.smk --configfile $file --rerun-incomplete
+    done
+
+else
+    echo "Please specify the type of MR you want to run: bidirectional, subgroup, or sensitivity"
+    exit 1
+
 fi
 

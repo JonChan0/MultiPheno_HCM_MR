@@ -1,0 +1,41 @@
+---
+title: "4_Coloc_Analyser"
+author: "Jonathan Chan"
+date: "2025-06-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+rm(list=ls())
+```
+
+## Import
+
+```{r}
+gws_hcm_snps_29 <- read_excel('../1_data/gwas_associations/1_pleio_pruned/HCM_to__gwas_associations.xlsx')
+
+gws_hcm_snps<- read_excel('../1_data/gwas_associations/tadros25_hcm_nonMTAG_associations.xlsx') %>%
+  mutate(loci = str_c('LOC',row_number())) %>%
+  filter(rsid %in% gws_hcm_snps_29$rsid) #Filter to those which remain after pleiotropy pruning
+tadros25_table <- read_excel('../../EDA_HCMR/popgen/5_MR/input/gwas_summary_statistics/HCM/Tadros23_GWS_HCM_SNPs.xlsx') %>%
+  filter(`Lead SNP` %in% gws_hcm_snps$rsid) %>%
+  select(rsid=`Lead SNP`, LocusName="Locus Name*")
+
+gws_hcm_snps<- gws_hcm_snps %>%
+  left_join(tadros25_table, by=c('rsid'))
+rm(tadros25_table, gws_hcm_snps_29)
+
+summary_hyprcoloc <- read_excel('../3_output/5_coloc/nonMTAG.xlsx', sheet='hyprcoloc.nonMTAG')
+summary_coloc <- read_excel('../3_output/5_coloc/nonMTAG.xlsx',sheet='coloc_nonMTAG')
+
+```
+
+```{r}
+hyprcoloc <- left_join(gws_hcm_snps, summary_hyprcoloc,by='loci')
+filtered_coloc <- summary_coloc %>%
+  filter(LOCI %in% c('LOC18','LOC28'))
+```
+

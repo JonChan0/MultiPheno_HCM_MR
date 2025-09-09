@@ -8,12 +8,13 @@ library(TwoSampleMR)
 library(tictoc)
 library(ggmanh)
 library(readxl)
+library(MRPRESSO)
 
-args = commandArgs(trailingOnly=TRUE) #Allows input of arguments from Rscript
+args = commandArgs(trailingOnly = TRUE) #Allows input of arguments from Rscript
 
 # test if there is at least one argument: if not, return an error
-if (length(args)==0) {
-  stop("At least one argument must be supplied", call.=FALSE)
+if (length(args) == 0) {
+  stop("At least one argument must be supplied", call. = FALSE)
 }
 
 exposure_input_path <- args[1]
@@ -26,20 +27,20 @@ ld_clumping <- args[7]
 ld_eur_bed_file <- args[8]
 plink_binary_path <- args[9]
 
-if(ld_clumping=='TRUE'){
+if (ld_clumping == 'TRUE') {
   ld_clumping <- TRUE
-} else if(ld_clumping == 'FALSE' | !exists('ld_clumping')){
+} else if (ld_clumping == 'FALSE' | !exists('ld_clumping')) {
   ld_clumping <- FALSE
 }
 
-if(selected_exposure_snps_string !='FALSE'){
+if (selected_exposure_snps_string != 'FALSE') {
   #Assume that the selected exposure SNPs come in as a single string
-  selected_exposure_snps <- str_split_1(selected_exposure_snps_string,',')
-  
+  selected_exposure_snps <- str_split_1(selected_exposure_snps_string, ',')
+
   print(selected_exposure_snps)
 }
 
-#Rescomp test code for bidirectional MR for UKB PP 
+#Rescomp test code for bidirectional MR
 # Direction 1
 # exposure_input_path <- './levin22_hf_gwas_ssf/final/levin22_hf_gwas_ssf.h.tsv.gz'
 # outcome_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
@@ -73,63 +74,98 @@ if(selected_exposure_snps_string !='FALSE'){
 tic()
 print('Importing the exposure GWAS summary statistics')
 
-if(any(str_detect(selected_exposure_snps, 'tsv'))){ #i.e if a file path is passed instead of a list of SNPs
+if (any(str_detect(selected_exposure_snps, 'tsv'))) {
+  #i.e if a file path is passed instead of a list of SNPs
   selected_exposure_snps <- read_tsv(selected_exposure_snps) %>%
     filter(`P-VALUE` <= 5 * 10^-8) #Filter for only GWS SNPs in the passed in file
   selected_exposure_snps <- selected_exposure_snps$SNPS
-} else if (any(str_detect(selected_exposure_snps, 'csv'))){
-  selected_exposure_snps <- read_csv(selected_exposure_snps) %>% 
+} else if (any(str_detect(selected_exposure_snps, 'csv'))) {
+  selected_exposure_snps <- read_csv(selected_exposure_snps) %>%
     filter(pValue <= 5 * 10^-8) #Filter for only GWS SNPs in the passed in file
   selected_exposure_snps <- selected_exposure_snps$dbSNP
-} else if (any(str_detect(selected_exposure_snps, '.xlsx'))){
-  selected_exposure_snps <- read_excel(selected_exposure_snps, sheet='Sheet1')
+} else if (any(str_detect(selected_exposure_snps, '.xlsx'))) {
+  selected_exposure_snps <- read_excel(selected_exposure_snps, sheet = 'Sheet1')
   selected_exposure_snps <- selected_exposure_snps$rsid
 }
 
 #This is the imported summary statisics filtered for those at approx. GWS (i.e pval < 10^-5)
 full_exposure_summstats <- read_tsv(exposure_input_path) %>%
-      filter(p_value < 10^-5) %>% #Use arbitrary threshold for GWAS significance
-      mutate(Phenotype=exposure_name)
-    
+  filter(p_value < 10^-5) %>% #Use arbitrary threshold for GWAS significance
+  mutate(Phenotype = exposure_name)
+
 #This is as per GWAS-SSF formatting as per EBI GWAS Catalog after harmonisation
-exposure_summstats <- format_data(full_exposure_summstats, type='exposure',snps=selected_exposure_snps,
-                                      snp_col='rsid',beta_col='beta',se_col='standard_error',eaf_col='effect_allele_frequency',effect_allele_col='effect_allele',other_allele_col='other_allele',
-                                      pval_col='p_value',chr_col='chromosome',pos_col='base_pair_location')
+exposure_summstats <- format_data(
+  full_exposure_summstats,
+  type = 'exposure',
+  snps = selected_exposure_snps,
+  snp_col = 'rsid',
+  beta_col = 'beta',
+  se_col = 'standard_error',
+  eaf_col = 'effect_allele_frequency',
+  effect_allele_col = 'effect_allele',
+  other_allele_col = 'other_allele',
+  pval_col = 'p_value',
+  chr_col = 'chromosome',
+  pos_col = 'base_pair_location'
+)
 toc()
 
-#-------------------------------------------------------------------------------  
+#-------------------------------------------------------------------------------
 tic()
 #LD clumping to only return independent SNPs
-if (isTRUE(ld_clumping)){
+if (isTRUE(ld_clumping)) {
   print('LD clumping the associated SNPs with exposure')
-  exposure_clumped <- clump_data(exposure_summstats,
-                                 bfile=ld_eur_bed_file,
-                                 plink_bin=plink_binary_path) #Uses 1KGP EUR LD Panel
-  
+  exposure_clumped <- clump_data(
+    exposure_summstats,
+    bfile = ld_eur_bed_file,
+    plink_bin = plink_binary_path
+  ) #Uses 1KGP EUR LD Panel
+
   #Plot a Manhattan to determine validity of instruments after LD clumping
-  g2 <- manhattan_plot(x = mutate(exposure_clumped, pos.exposure=as.numeric(pos.exposure)), pval.colname = "pval.exposure", chr.colname = "chr.exposure", pos.colname = "pos.exposure", 
-                       plot.title = str_c('Manhattan plot for LD clumped SNPs with pvalue < 10^-5 for phenotype ',exposure_name), y.label = "-log10(pval)",
-                       rescale=F, label.colname='SNP')
+  g2 <- manhattan_plot(
+    x = mutate(exposure_clumped, pos.exposure = as.numeric(pos.exposure)),
+    pval.colname = "pval.exposure",
+    chr.colname = "chr.exposure",
+    pos.colname = "pos.exposure",
+    plot.title = str_c(
+      'Manhattan plot for LD clumped SNPs with pvalue < 10^-5 for phenotype ',
+      exposure_name
+    ),
+    y.label = "-log10(pval)",
+    rescale = F,
+    label.colname = 'SNP'
+  )
   #print(g)
-  ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_ldclumped_manhattan.png'),g2,dpi=600)
+  ggsave(
+    str_c(
+      output_path,
+      exposure_name,
+      '_to_',
+      outcome_name,
+      '/',
+      exposure_name,
+      '_ldclumped_manhattan.png'
+    ),
+    g2,
+    dpi = 600
+  )
   rm(g2)
-  
-  if(nrow(exposure_clumped) ==0){
+
+  if (nrow(exposure_clumped) == 0) {
     print('LD clumping removed all SNPs or you ran out of API calls')
     stop()
   }
-  
-} else{
+} else {
   exposure_clumped <- exposure_summstats
 }
-  
+
 toc()
 
 # print(head(exposure_clumped))
 exposure_instruments <- exposure_clumped
 rm(exposure_clumped, full_exposure_summstats)
 
-if(nrow(exposure_instruments)==0){
+if (nrow(exposure_instruments) == 0) {
   print('You have no instruments for the exposure')
   stop()
 }
@@ -140,19 +176,42 @@ tic()
 print('Importing the outcome GWAS summary statistics')
 
 full_outcome_summstats <- read_tsv(outcome_input_path) %>%
-  mutate(Phenotype=outcome_name)
-  
-outcome_summstats <- format_data(full_outcome_summstats,snps=exposure_instruments$SNP, 
-                                   type='outcome',
-                                   snp_col='rsid',beta_col='beta',se_col='standard_error',eaf_col='effect_allele_frequency',effect_allele_col='effect_allele',other_allele_col='other_allele',
-                                   pval_col='p_value',chr_col='chromosome',pos_col='base_pair_location')
-  
-if(nrow(outcome_summstats) != nrow(exposure_instruments)){
-  print('Failed to identify the some of the exposure instruments in the outcome GWAS so ignoring those instruments')
-  missing_snps <- exposure_instruments$SNP[!exposure_instruments$SNP %in% outcome_summstats$SNP]
-  print(str_c('The following ', nrow(missing_snps), ' SNPs of original ',nrow(exposure_instruments),' instruments are not present in the outcome summary statistics: ',missing_snps))
-} else if(nrow(outcome_summstats) == 0){
-  print('None of the instrument SNPs were found in the outcome summary statistics after formatting')
+  mutate(Phenotype = outcome_name)
+
+outcome_summstats <- format_data(
+  full_outcome_summstats,
+  snps = exposure_instruments$SNP,
+  type = 'outcome',
+  snp_col = 'rsid',
+  beta_col = 'beta',
+  se_col = 'standard_error',
+  eaf_col = 'effect_allele_frequency',
+  effect_allele_col = 'effect_allele',
+  other_allele_col = 'other_allele',
+  pval_col = 'p_value',
+  chr_col = 'chromosome',
+  pos_col = 'base_pair_location'
+)
+
+if (nrow(outcome_summstats) != nrow(exposure_instruments)) {
+  print(
+    'Failed to identify the some of the exposure instruments in the outcome GWAS so ignoring those instruments'
+  )
+  missing_snps <- exposure_instruments$SNP[
+    !exposure_instruments$SNP %in% outcome_summstats$SNP
+  ]
+  print(str_c(
+    'The following ',
+    nrow(missing_snps),
+    ' SNPs of original ',
+    nrow(exposure_instruments),
+    ' instruments are not present in the outcome summary statistics: ',
+    missing_snps
+  ))
+} else if (nrow(outcome_summstats) == 0) {
+  print(
+    'None of the instrument SNPs were found in the outcome summary statistics after formatting'
+  )
   stop()
 }
 
@@ -162,9 +221,17 @@ rm(full_outcome_summstats)
 #-------------------------------------------------------------------------------
 #Harmonise the data
 print('Harmonising exposure and outcome data')
-harmonised_data <- harmonise_data(exposure_instruments, outcome_summstats,
-                                  action=1) #Assume that all alleles are presented on the forward strand
-rm(exposure_clumped, exposure_instruments, exposure_summstats, outcome_summstats)
+harmonised_data <- harmonise_data(
+  exposure_instruments,
+  outcome_summstats,
+  action = 1
+) #Assume that all alleles are presented on the forward strand
+rm(
+  exposure_clumped,
+  exposure_instruments,
+  exposure_summstats,
+  outcome_summstats
+)
 
 #--------------------------------------------------------------------------------
 #Run MR
@@ -172,16 +239,27 @@ print('Running MR')
 
 #Mainline MR analyses
 ##Select IVW with MRE if n_instruments >5, otherwise fixed-effects as per Burgess et al, 2023
-if(nrow(harmonised_data)==1){
+if (nrow(harmonised_data) == 1) {
   mainline_mr_method_list <- c('mr_wald_ratio')
 } else {
   mainline_mr_method_list <- c('mr_ivw')
 }
-mainline_mr_results <- mr(harmonised_data, method_list=mainline_mr_method_list) #Runs MR with a bunch of different methods- call mr_method_list() to see\
+mainline_mr_results <- mr(
+  harmonised_data,
+  method_list = mainline_mr_method_list
+) #Runs MR with a bunch of different methods- call mr_method_list() to see\
 
 #Sensitivity analyses
-sensitivity_mr_method_list <- c(mainline_mr_method_list,'mr_weighted_median','mr_weighted_mode','mr_egger_regression')
-sensitivity_mr_results <- mr(harmonised_data, method_list=sensitivity_mr_method_list)
+sensitivity_mr_method_list <- c(
+  mainline_mr_method_list,
+  'mr_weighted_median',
+  'mr_weighted_mode',
+  'mr_egger_regression'
+)
+sensitivity_mr_results <- mr(
+  harmonised_data,
+  method_list = sensitivity_mr_method_list
+)
 pleiotropy_results <- mr_pleiotropy_test(harmonised_data) #MR Egger test for directional pleiotropy via evaluating MR Egger intercept difference from 0
 res_single <- mr_singlesnp(harmonised_data) #Single-SNP analysis
 res_loo <- mr_leaveoneout(harmonised_data) #Leave-one-out analysis
@@ -197,60 +275,202 @@ forest <- mr_forest_plot(res_single)
 loo_forest <- mr_leaveoneout_plot(res_loo)
 #print(loo_forest[[1]])
 
-  #Add an output step to output odds-ratio with 95% confidence interval (instead of log-odds with standard error)
-  safe_generate_odds_ratios <- safely(generate_odds_ratios)
-  or_result <- safe_generate_odds_ratios(sensitivity_mr_results)
+#Add an output step to output odds-ratio with 95% confidence interval (instead of log-odds with standard error)
+safe_generate_odds_ratios <- safely(generate_odds_ratios)
+or_result <- safe_generate_odds_ratios(sensitivity_mr_results)
 
-  # Output the harmonised instrument details (Beta and SE for exposure/outcome)
-  print("Writing individual instrument details (beta/se) to TSV file.")
-  instrument_details_df <- harmonised_data %>%
-    dplyr::select(
-      SNP,
-      effect_allele.exposure, # Keep alleles for reference
-      other_allele.exposure,
-      eaf.exposure,          # Keep EAF for context
-      beta.exposure,
-      se.exposure,
-      pval.exposure,         # Keep p-values
-      beta.outcome,
-      se.outcome,
-      pval.outcome,
-      mr_keep              # Indicates if SNP was kept after harmonisation checks
-    )
-  
-  instrument_details_filename <- file.path(output_path, paste0(exposure_name, '_to_', outcome_name, '_instrument_details.tsv'))
-  write_tsv(instrument_details_df, instrument_details_filename)
-  print(paste("Instrument details saved to:", instrument_details_filename))
+# Output the harmonised instrument details (Beta and SE for exposure/outcome)
+print("Writing individual instrument details (beta/se) to TSV file.")
+instrument_details_df <- harmonised_data %>%
+  dplyr::select(
+    SNP,
+    effect_allele.exposure, # Keep alleles for reference
+    other_allele.exposure,
+    eaf.exposure, # Keep EAF for context
+    beta.exposure,
+    se.exposure,
+    pval.exposure, # Keep p-values
+    beta.outcome,
+    se.outcome,
+    pval.outcome,
+    mr_keep # Indicates if SNP was kept after harmonisation checks
+  )
+
+instrument_details_filename <- file.path(
+  output_path,
+  paste0(exposure_name, '_to_', outcome_name, '_instrument_details.tsv')
+)
+write_tsv(instrument_details_df, instrument_details_filename)
+print(paste("Instrument details saved to:", instrument_details_filename))
 
 #MendelianRandomization Addendum - computing an approximation of the first-stage F-statistic from genetic variants -> exposure
-mr_object <- MendelianRandomization::mr_input(bx=harmonised_data$beta.exposure, bxse=harmonised_data$se.exposure,
-                                              by=harmonised_data$beta.outcome, byse= harmonised_data$se.outcome,
-                                              exposure=exposure_name,
-                                              outcome=outcome_name,
-                                              snps=harmonised_data$SNP)
-MRpackage_ivw_results <- MendelianRandomization::mr_ivw(mr_object, model='default')
+mr_object <- MendelianRandomization::mr_input(
+  bx = harmonised_data$beta.exposure,
+  bxse = harmonised_data$se.exposure,
+  by = harmonised_data$beta.outcome,
+  byse = harmonised_data$se.outcome,
+  exposure = exposure_name,
+  outcome = outcome_name,
+  snps = harmonised_data$SNP
+)
+MRpackage_ivw_results <- MendelianRandomization::mr_ivw(
+  mr_object,
+  model = 'default'
+)
+
+#Addendum for MRPRESSO - horizontal pleiotropy evaluation
+mrpresso_results <- mr_presso(
+  data = harmonised_data,
+  BetaOutcome = 'beta.outcome',
+  BetaExposure = 'beta.exposure',
+  SdOutcome = 'se.outcome',
+  SdExposure = 'se.exposure',
+  OUTLIERtest = T,
+  DISTORTIONtest = T
+)
 
 #Output plots and data --------------------------------------------------------------------------------
 #Write out a table of results
-if (isFALSE(dir.exists(str_c(output_path,exposure_name,'_to_',outcome_name,'/')))){
-  dir.create(str_c(output_path,exposure_name,'_to_',outcome_name,'/')) #Create the directory if it doesn't exist already
+if (
+  isFALSE(dir.exists(str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/'
+  )))
+) {
+  dir.create(str_c(output_path, exposure_name, '_to_', outcome_name, '/')) #Create the directory if it doesn't exist already
 }
 
-#This outputs the print output as a txt file
-sink(file=str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_MRpackage_IVW_results.txt'))
+#This outputs the print output as a txt file for the MendelianRandomization
+sink(
+  file = str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_MRpackage_IVW_results.txt'
+  )
+)
 print(MRpackage_ivw_results)
-sink(file=NULL)
+sink(file = NULL)
 
-#Save 
-ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_scatter_mainline.png'),scatter[[1]],dpi=600)
-ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_scatter_sensitivity.png'),scatter2[[1]],dpi=600)
-ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_forest.png'),forest[[1]],dpi=600)
-ggsave(str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_looforest.png'),loo_forest[[1]],dpi=600)
+#This outputs the print output as a txt file for the MRPresso Pleiotropy Test
+sink(
+  file = str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_MRPRESSO_test.txt'
+  )
+)
+mrpresso_results$`MR-PRESSO results`[[
+  'Outlier Test'
+]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
+  bind_cols('SNP' = harmonised_data$SNP)
+print(mrpresso_results)
+sink(file = NULL)
 
-write.table(mainline_mr_results,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_mainline.tsv'),sep='\t')
-write.table(sensitivity_mr_results,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_sensitivity.tsv'),sep='\t')
-if (!is.null(or_result$result)){ 
-  write.table(or_result$result,str_c(output_path,exposure_name,'_to_',outcome_name,'/',exposure_name,'_mr_results_sensitivity_oddsratio.tsv'),sep='\t')
+#Save
+ggsave(
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_scatter_mainline.png'
+  ),
+  scatter[[1]],
+  dpi = 600
+)
+ggsave(
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_scatter_sensitivity.png'
+  ),
+  scatter2[[1]],
+  dpi = 600
+)
+ggsave(
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_forest.png'
+  ),
+  forest[[1]],
+  dpi = 600
+)
+ggsave(
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_looforest.png'
+  ),
+  loo_forest[[1]],
+  dpi = 600
+)
+
+write.table(
+  mainline_mr_results,
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_results_mainline.tsv'
+  ),
+  sep = '\t'
+)
+write.table(
+  sensitivity_mr_results,
+  str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_mr_results_sensitivity.tsv'
+  ),
+  sep = '\t'
+)
+if (!is.null(or_result$result)) {
+  write.table(
+    or_result$result,
+    str_c(
+      output_path,
+      exposure_name,
+      '_to_',
+      outcome_name,
+      '/',
+      exposure_name,
+      '_mr_results_sensitivity_oddsratio.tsv'
+    ),
+    sep = '\t'
+  )
 } else {
   print('Odds ratio function failed')
 }
@@ -258,4 +478,7 @@ if (!is.null(or_result$result)){
 #Print out a HTML report
 print('Constructing HTML Report')
 safe_mrreport <- safely(mr_report)
-safe_mrreport(harmonised_data, output_path=str_c(output_path,exposure_name,'_to_',outcome_name,'/')) #Generate html report
+safe_mrreport(
+  harmonised_data,
+  output_path = str_c(output_path, exposure_name, '_to_', outcome_name, '/')
+) #Generate html report

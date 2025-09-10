@@ -319,15 +319,21 @@ MRpackage_ivw_results <- MendelianRandomization::mr_ivw(
 )
 
 #Addendum for MRPRESSO - horizontal pleiotropy evaluation
-mrpresso_results <- mr_presso(
-  data = harmonised_data,
-  BetaOutcome = 'beta.outcome',
-  BetaExposure = 'beta.exposure',
-  SdOutcome = 'se.outcome',
-  SdExposure = 'se.exposure',
-  OUTLIERtest = T,
-  DISTORTIONtest = T
+tryCatch(
+  mrpresso_results <- mr_presso(
+    data = harmonised_data,
+    BetaOutcome = 'beta.outcome',
+    BetaExposure = 'beta.exposure',
+    SdOutcome = 'se.outcome',
+    SdExposure = 'se.exposure',
+    OUTLIERtest = T,
+    DISTORTIONtest = T
+  ),
+  error = print(
+    'MRPRESSO failed - likely due to insufficient instrumental variables'
+  )
 )
+
 
 #Output plots and data --------------------------------------------------------------------------------
 #Write out a table of results
@@ -359,23 +365,25 @@ print(MRpackage_ivw_results)
 sink(file = NULL)
 
 #This outputs the print output as a txt file for the MRPresso Pleiotropy Test
-sink(
-  file = str_c(
-    output_path,
-    exposure_name,
-    '_to_',
-    outcome_name,
-    '/',
-    exposure_name,
-    '_MRPRESSO_test.txt'
+if (exists(mrpresso_results)) {
+  sink(
+    file = str_c(
+      output_path,
+      exposure_name,
+      '_to_',
+      outcome_name,
+      '/',
+      exposure_name,
+      '_MRPRESSO_test.txt'
+    )
   )
-)
-mrpresso_results$`MR-PRESSO results`[[
-  'Outlier Test'
-]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
-  bind_cols('SNP' = harmonised_data$SNP)
-print(mrpresso_results)
-sink(file = NULL)
+  mrpresso_results$`MR-PRESSO results`[[
+    'Outlier Test'
+  ]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
+    bind_cols('SNP' = harmonised_data$SNP)
+  print(mrpresso_results)
+  sink(file = NULL)
+}
 
 #Save
 ggsave(

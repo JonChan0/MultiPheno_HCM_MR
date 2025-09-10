@@ -319,21 +319,33 @@ MRpackage_ivw_results <- MendelianRandomization::mr_ivw(
 )
 
 #Addendum for MRPRESSO - horizontal pleiotropy evaluation
-tryCatch(
-  mrpresso_results <- mr_presso(
-    data = harmonised_data,
-    BetaOutcome = 'beta.outcome',
-    BetaExposure = 'beta.exposure',
-    SdOutcome = 'se.outcome',
-    SdExposure = 'se.exposure',
-    OUTLIERtest = T,
-    DISTORTIONtest = T
-  ),
-  error = print(
-    'MRPRESSO failed - likely due to insufficient instrumental variables'
-  )
-)
+mrpresso_results <- tryCatch(
+  {
+    # This is the expression to 'try'
+    mr_presso(
+      data = harmonised_data,
+      BetaOutcome = 'beta.outcome',
+      BetaExposure = 'beta.exposure',
+      SdOutcome = 'se.outcome',
+      SdExposure = 'se.exposure',
+      OUTLIERtest = TRUE,
+      DISTORTIONtest = TRUE
+    )
+  },
+  error = function(e) {
+    # This function is called ONLY if an error occurs
+    message(
+      'MR-PRESSO failed - likely due to insufficient instrumental variables.'
+    )
 
+    # Optional: print the original error message from R for debugging
+    message('Original R error message:')
+    message(e)
+
+    # Return a specific value (like NULL) on failure
+    return(NULL)
+  }
+)
 
 #Output plots and data --------------------------------------------------------------------------------
 #Write out a table of results
@@ -365,24 +377,23 @@ print(MRpackage_ivw_results)
 sink(file = NULL)
 
 #This outputs the print output as a txt file for the MRPresso Pleiotropy Test
-if (exists(mrpresso_results)) {
-  sink(
-    file = str_c(
-      output_path,
-      exposure_name,
-      '_to_',
-      outcome_name,
-      '/',
-      exposure_name,
-      '_MRPRESSO_test.txt'
-    )
+if (!is.null(mrpresso_results)) {
+  mrpresso_fileout <- str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_MRPRESSO_test.rds'
   )
+
   mrpresso_results$`MR-PRESSO results`[[
     'Outlier Test'
   ]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
     bind_cols('SNP' = harmonised_data$SNP)
-  print(mrpresso_results)
-  sink(file = NULL)
+
+  saveRDS(mrpresso_results, mrpresso_fileout)
 }
 
 #Save

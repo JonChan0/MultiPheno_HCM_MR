@@ -23,10 +23,10 @@ The 32 GWS SNPs from Tadros et al, 2025 are used as the instruments for the HCM 
 
 ```{r import}
 
-results_folder <- '../3_output/2_MR/'
+results_folder <- '1_MR/3_output/2_MR/'
 
 analyses <- list.dirs(results_folder, recursive=F, full.names=F)
-analyses <- analyses[!str_detect(analyses, 'archive|subgroup|DCM')]
+analyses <- analyses[!str_detect(analyses, 'archive|subgroup|DCM|sensitivity')]
 #Don't include DCM analyses in overall plot
 
 mainline_results_importer <- function(folder){
@@ -43,13 +43,13 @@ mr_results <- map(str_c(results_folder, analyses), ~mainline_results_importer(.)
 
 write_tsv(mr_results, str_c(results_folder, 'summary_MR_results.tsv'))
 ```
+
 Define the grouping of the phenotypes into different parameter groups here.
 
 ```{r}
-crf_vars <- c('BMI','SmokingInitiation','T2D', 'DBP')
+crf_vars <- c('BMI','SmokingInitiation','T2D', 'DBP', 'AF','HF','CAD','stroke','eGFR')
 fibrosis_vars <- c('T1time', 'hcmr2_ecvfwhole','hcmr2_lge_total')
 LV_diastolic_vars <- c('longdsr','radialdsr', 'maxLAVi')
-related_disease_vars <- c('AF')
 pp_vars <- c('hcmr_NTproBNP','hcmr_gal3','hcmr_TnT','hcmr_IL1RL1','hcmr_cicp','hcmr_mmp1',
              'ukb_NTproBNP','ukb_BNP','ukb_gal3','ukb_TnI','ukb_IL1RL1','ukb_mmp1')
 ```
@@ -79,12 +79,10 @@ mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_results_im
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
     mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
-                                        exposure %in% related_disease_vars ~'Related Diseases',
                                         exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
-                                        outcome %in% related_disease_vars ~'Related Diseases',
                                         outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
@@ -194,6 +192,191 @@ if(isTRUE(thanaj_dsr_normalisation)){
 }
 ```
 
+## F-Statistic Summary
+
+This imports in all the outputs from MendelianRandomization package which provides a F-statistic (first-stage) over all instruments for each MR analysis.
+The threshold for sufficient instrument strength (to avoid weak instrument bias) should be > 10.
+
+```{r}
+
+MRpackage_importer <- function(input_folder){
+
+  #Find the MRpackage_IVW_results.txt
+  filename <- list.files(input_folder, pattern = 'MRpackage_IVW')
+  path <- str_c(input_folder, filename, sep='/')
+  con <- file(path,open="r")
+  lines <- readLines(con)
+  close(con)
+
+  exposure_outcome <- str_match(path, '2_MR\\/([a-zA-Z_\\d]+)\\/')[,2]
+
+  het_stats <- lines[which(str_detect(lines,'Heterogeneity'))]
+  f_stat <- lines[which(str_detect(lines,'F statistic'))]
+
+  isq <- as.numeric(str_match(het_stats, 'I\\^2 = ([\\d\\.]+)%')[,2])
+  f <- as.numeric(str_match(f_stat, 'F statistic = ([\\d\\.]+)\\.')[,2])
+
+  output_tb <- tribble(
+    ~exposure_outcome, ~het_isq, ~fstat,
+    exposure_outcome, isq, f
+  )
+
+  return(output_tb)
+}
+
+MRpackage_results <- map(str_c(results_folder, analyses), ~MRpackage_importer(.)) %>% bind_rows()
+write_tsv(MRpackage_results , str_c(results_folder, 'summary_MRpackage_Isq_Fstat.tsv'))
+
+#How many of the analyses have first-stage F statistic < 10
+print(sum(MRpackage_results$fstat < 10))
+```
+
+## MR-PRESSO Summary
+
+This imports in all the outputs from MRPRESSO package which provides 
+
+- Global test for directional horizontal pleiotropy
+- Outlier test for outlier removal to see if that corrects for directional horizontal pleiotropy
+- Distortion test for whether the causal estimate overall is distorted before and after outlier removal
+
+It also imports in the results from the Egger regression intercept != 0 test from the .md file.
+
+```{r}
+MRPRESSO_results_importer <- function(input_folder, return_outlier_tb = F){
+
+  #Find the MRPRESSO results.txt
+  filename <- list.files(input_folder, pattern = 'MRPRESSO_test.rds')
+  path <- str_c(input_folder, filename, sep='/')
+  exposure_outcome <- str_match(path, '2_MR\\/([a-zA-Z_\\d]+)\\/')[,2]
+
+  if (length(filename) != 0){
+
+    mrpresso_results <- readRDS(path)
+
+    output_tb <- mrpresso_results$`Main MR results` %>% 
+      select('analysis'='MR Analysis', 'estimate'='Causal Estimate', 'sd'='Sd', 'P-value') %>%
+      pivot_wider(names_from ='analysis', values_from=c('estimate', 'sd','P-value')) %>%
+      mutate(exposure_outcome = exposure_outcome) %>%
+      select(exposure_outcome, everything())
+    colnames(output_tb) <- c('exposure_outcome','Raw_estimate','Outlier_corrected_estimate','Raw_sd','Outlier_corrected_sd','Raw_pval','Outlier_corrected_pval')
+
+    outlier_tb <- mrpresso_results$`MR-PRESSO results`$`Outlier Test` %>%
+      mutate(exposure_outcome = exposure_outcome) %>%
+      select(exposure_outcome, everything())
+
+    distortion_pval <- mrpresso_results$`MR-PRESSO results`$`Distortion Test`$Pvalue
+
+    output_tb <- output_tb %>%
+      mutate(globaltest_pval = as.character(mrpresso_results$`MR-PRESSO results`$`Global Test`[[2]] )) %>%
+      mutate(distortiontest_pval = ifelse(length(distortion_pval) == 0, '', as.character(distortion_pval)))
+
+      if (!isFALSE(return_outlier_tb)){
+        return(outlier_tb)
+    } else {
+      return(output_tb)
+    }
+
+  } else{
+    return(NULL)
+  }
+}
+
+MRPRESSO_results <- map(str_c(results_folder, analyses), ~MRPRESSO_results_importer (.)) %>% bind_rows()
+
+```
+
+This retrieves the Egger regression intercept != 0 test from each of the analyses.
+
+```{r}
+extract_egger_pval <- function(input_folder) {
+
+  #Find the mr_report.md
+  filename <- list.files(input_folder, pattern = 'mr_report')
+  filepath <- str_c(input_folder, filename, sep='/')
+  exposure_outcome <- str_match(filepath, '2_MR\\/([a-zA-Z_\\d]+)\\/')[,2]
+
+  # Check if the file exists before proceeding
+  if (length(filepath) == 0) {
+    return(NULL)
+    stop("Error: File not found at the specified path.")
+  }
+
+  # Read all lines from the file
+  lines <- readLines(filepath, warn = FALSE)
+
+  # Find the line index for the target section header
+  # Using fixed = TRUE for performance and to avoid regex interpretation
+  header_index <- grep("### Test for directional horizontal pleiotropy", lines, fixed = TRUE)
+
+  # If the header isn't found, return NA
+  if (length(header_index) == 0) {
+    warning("Section 'Test for directional horizontal pleiotropy' not found.")
+    return(NA)
+  }
+
+  # The p-value is expected to be in the data row, which is 4 lines below the header.
+  # Structure: Header -> Blank Line -> Table Header -> Separator -> Data Row
+  data_line_index <- header_index + 5
+
+  # Check if the data line is within the bounds of the file content
+  if (data_line_index > length(lines)) {
+    warning("Could not find the data row for the Egger intercept test.")
+    return(NA)
+  }
+
+  # Get the specific line containing the values
+  data_line <- lines[data_line_index]
+
+  # Split the line by the pipe "|" delimiter
+  # The first element from strsplit is the one we want
+  values <- strsplit(data_line, "\\|")[[1]]
+
+  # Remove any empty strings that result from splitting
+  non_empty_values <- values[values != ""]
+
+  # Check if we have the expected number of columns (intercept, se, pval)
+  if (length(non_empty_values) < 3) {
+      warning("Egger intercept data row does not have the expected format.")
+      return(NA)
+  }
+  
+  # The p-value is the last element in the resulting vector
+  pval_string <- trimws(non_empty_values[length(non_empty_values)])
+
+  pval <- as.numeric(pval_string)
+  output_tb <- tribble(
+    ~exposure_outcome, ~egger_intercept_pval,
+    exposure_outcome, pval
+  )
+  return(output_tb)
+}
+
+egger_intercept_pvals <- map(str_c(results_folder, analyses), ~extract_egger_pval(.)) %>% bind_rows()
+
+#This also adds in sample sizes for each study
+samplesizes <- readxl::read_excel('1_MR/1_data/gwas_summstats/hcm_related_traits_summary.xlsx', sheet=2) %>%
+  select(PHENO, N) %>%
+  filter(!is.na(PHENO), !is.na(N))
+
+#This adds the Egger intercept pvalues to the actual MR-PRESSO ones
+MRPRESSO_results <- left_join(MRPRESSO_results, egger_intercept_pvals, by='exposure_outcome')
+write_tsv(MRPRESSO_results  , str_c(results_folder, 'summary_MRPRESSO.tsv'))
+rm(egger_intercept_pvals)
+```
+
+## Analysis Filtering
+
+This uses MRPRESSO to do some QC of the analyses.
+
+```{r}
+#Does the statistical significance of the IVW MR change after outlier correction using MR-PRESSO. This doesn't take into account multiple testing correction btw
+MRPRESSO_results <- MRPRESSO_results %>%
+  mutate(raw_sig = Raw_pval < 0.05,
+          corrected_sig = Outlier_corrected_pval < 0.05) %>%
+  mutate(sig_changes = raw_sig != corrected_sig) %>%
+  arrange(globaltest_pval)
+```
+
 ## Summary Plotting
 
 This plots a volcano plot of all the MR analyses with BH's p-value correction for multiple testing correction (controls FWER but with greater power than Bonferroni and also does not assume independence between tests).
@@ -205,12 +388,12 @@ mr_results <- mr_results %>%
   mutate(group = ifelse(exposure=='HCM', 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
   mutate(label = ifelse(mtc_pval <= 0.05, exposure_outcome, '')) %>%
   mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
-                                        exposure %in% related_disease_vars ~'Related Diseases',
+                                        # exposure %in% related_disease_vars ~'Related Diseases',
                                         exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
-                                        outcome %in% related_disease_vars ~'Related Diseases',
+                                        # outcome %in% related_disease_vars ~'Related Diseases',
                                         outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
@@ -236,7 +419,7 @@ summary_scatter <- ggplot(mr_results,aes(x=b,y=-log10(mtc_pval)))+
        )
 
 print(summary_scatter)
-ggsave('../3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=600, width=9, height=6)
+ggsave('1_MR/3_output/3_summary_plots/MR_summary_plot.png',summary_scatter, dpi=600, width=9, height=6)
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 #Likewise with DBP and BMI and Thanaj DSR which are normalised using the SD from the original publication.
@@ -259,7 +442,7 @@ summary_scatter_confint <- ggplot(mr_results_or,aes(x=b,y=-log10(mtc_pval)))+
        )
 
 print(summary_scatter_confint)
-ggsave('../3_output/3_summary_plots/MR_summary_plot_confint.png',summary_scatter_confint, dpi=600, width=9, height=6)
+ggsave('1_MR/3_output/3_summary_plots/MR_summary_plot_confint.png',summary_scatter_confint, dpi=600, width=9, height=6)
 
 #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
 #Likewise with DBP and BMI and Thanaj DSR which are normalised using the SD from the original publication.
@@ -298,7 +481,7 @@ This is defunct because plotting odds-ratio is not good when you show both sides
 #        )
 # 
 # print(summary_scatter_confint_discreteoutcome_OR)
-# ggsave('../3_output/3_summary_plots/MR_summary_plot_confint_discreteoutcomeOR.png',summary_scatter_confint, dpi=600, width=9, height=6)
+# ggsave('1_MR/3_output/3_summary_plots/MR_summary_plot_confint_discreteoutcomeOR.png',summary_scatter_confint, dpi=600, width=9, height=6)
 ```
 
 
@@ -317,11 +500,11 @@ if(isTRUE(bmi_dbp_normalisation) & isTRUE(thanaj_dsr_normalisation)){
 
 sig_mr_results_or <- sig_mr_results_or %>%
   mutate(exposure_plot_group = case_when(exposure%in% persd_exposure_vars ~ 'Per-SD Exposure', 
-                                       exposure == 'HCM' ~ 'Per-Log(Odds) Exposure',
+                                       exposure %in% c('HF','HCM') ~ 'Per-Log(Odds) Exposure',
                                        T~'Per-Unit Exposure'))
 
 sig_mr_results_or <- sig_mr_results_or %>%
-  mutate(outcome_plot_group = ifelse(outcome %in% c('HCM',related_disease_vars,'T2D','SmokingInitiation'), 'OR', 'beta')) %>%
+  mutate(outcome_plot_group = ifelse(outcome %in% c('HCM','HF','CAD','stroke','T2D','SmokingInitiation'), 'OR', 'beta')) %>%
   mutate(exposure_outcome=factor(exposure_outcome))
 
 forest_plot_overall <- ggplot(sig_mr_results_or)+
@@ -334,24 +517,36 @@ forest_plot_overall <- ggplot(sig_mr_results_or)+
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_overall)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot_overall, dpi=600, width=9, height=6)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot_overall, dpi=600, width=9, height=6)
 ```
 
-I also plot the forest plot broken down into 2 plots instead and where HCM = exposure, do per doubling odds(HCM) and where it is outcome, do OR(HCM).
+I also plot the forest plot broken down into 2 plots instead and where HCM or HF = exposure, do per doubling odds(HCM) and where it is outcome, do OR(HCM) or OR(HF).
 
 ```{r}
-forest_plot_hcmexposure <- ggplot(filter(sig_mr_results_or, str_detect(exposure, 'HCM')))+
-  geom_point(aes(x=b*log(2), y= exposure_outcome))+
-  geom_errorbar(aes(xmin=lo_ci*log(2), xmax=up_ci*log(2), y=exposure_outcome))+
+
+sig_mr_results_or_exposure_HCM <- filter(sig_mr_results_or, str_detect(exposure, 'HCM')) %>%
+  mutate(scaled_b = ifelse(outcome == 'HF',exp(b*log(2)), b*log(2))) %>% #i.e if HCM -> HF, express as OR(HF) per doubling (Odds) of HCM
+  mutate(scaled_lo_ci = ifelse(outcome == 'HF',exp(lo_ci*log(2)), lo_ci*log(2)),
+        scaled_up_ci = ifelse(outcome == 'HF',exp(up_ci*log(2)), up_ci*log(2)))
+
+#Plot this plot without HF signal
+forest_plot_hcmexposure <- ggplot(filter(sig_mr_results_or_exposure_HCM, outcome != 'HF'))+
+  geom_point(aes(x=scaled_b, y= exposure_outcome))+
+  geom_errorbar(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome))+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
   xlab('Change in Outcome (SD) per Doubling of Odds(HCM)')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group')
 
 print(forest_plot_hcmexposure)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_hcmexposure.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmexposure.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
 
-forest_plot_hcmoutcome <- ggplot(filter(sig_mr_results_or, str_detect(outcome, 'HCM')))+
+sig_mr_results_or_outcomeHCM <- filter(sig_mr_results_or, str_detect(outcome, 'HCM')) %>%
+  mutate(scaled_b = ifelse(exposure == 'HF',exp(b*log(2)), b*log(2))) %>% #i.e if HF -> HCM , express as OR(HCM) per doubling (Odds) of HF
+  mutate(scaled_lo_ci = ifelse(exposure == 'HF',exp(lo_ci*log(2)), lo_ci*log(2)),
+        scaled_up_ci = ifelse(exposure == 'HF',exp(up_ci*log(2)), up_ci*log(2)))
+
+forest_plot_hcmoutcome <- ggplot(filter(sig_mr_results_or_outcomeHCM, exposure != 'HF'))+
   geom_point(aes(x=or, y= exposure_outcome))+
   geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome))+
   geom_vline(xintercept=1, col='black', linetype='dashed')+
@@ -360,30 +555,53 @@ forest_plot_hcmoutcome <- ggplot(filter(sig_mr_results_or, str_detect(outcome, '
   labs(col='Non-HCM Phenotype Group')
 
 print(forest_plot_hcmoutcome)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
+
+
+#Output combined plot
+combined_forest_plot <- forest_plot_hcmexposure / forest_plot_hcmoutcome
+print(combined_forest_plot)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined.png',combined_forest_plot, dpi=600, width=9, height=6)
+
+```
+
+```{r}
+#Now plot the HF plots by themselves for both HCM -> HF and HF -> HCM
+forest_plot_hcmexposure <- ggplot(filter(sig_mr_results_or_exposure_HCM, outcome == 'HF'))+
+  geom_point(aes(x=scaled_b, y= exposure_outcome))+
+  geom_errorbar(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome))+
+  geom_vline(xintercept=1, col='black', linetype='dashed')+
+  xlab('Odds Ratio (HF) per Doubling of Odds(HCM)')+
+  ylab('Exposure -> Outcome')
+
+forest_plot_hcmoutcome <- ggplot(filter(sig_mr_results_or_outcomeHCM, exposure == 'HF'))+
+  geom_point(aes(x=or, y= exposure_outcome))+
+  geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome))+
+  geom_vline(xintercept=1, col='black', linetype='dashed')+
+  xlab('Odds Ratio(HCM) per Doubling of Odds(HF)')+
+  ylab('Exposure -> Outcome')
 
 combined_forest_plot <- forest_plot_hcmexposure / forest_plot_hcmoutcome
 print(combined_forest_plot)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_combined.png',combined_forest_plot, dpi=600, width=9, height=6)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_HFonly.png',combined_forest_plot, dpi=600, width=6, height=3)
 
 #N.B To get the numerical values
-test <- mr_results_or %>%
+num_values <- mr_results_or %>%
   filter(exposure_outcome %in% c('HCM -> hcmr_NTproBNP',
                                     'HCM -> hcmr_TnT',
                                     'HCM -> radialdsr',
                                     'HCM -> longdsr')) %>%
   mutate(b = b*log(2), lo_ci = lo_ci*log(2), up_ci = up_ci * log(2)) %>%
   select(-contains('or'))
-  
-```
 
+```
 
 ## Subgroup Analyses
 
-I perform subgroup analyses for the significant conclusions seen from the initial MR analysis.
+I perform subgroup analyses for the significant conclusions seen from the initial MR analysis i.e. for sarcomere-positive and sarcomere-negative.
 
 ```{r}
-results_folder <- '../3_output/2_MR/subgroup_analyses/'
+results_folder <- '1_MR/3_output/2_MR/subgroup_analyses/'
 analyses <- list.dirs(results_folder, recursive=F, full.names=F)
 analyses <- analyses[!analyses %in% c('main_analysis_notsig')]
 
@@ -392,12 +610,12 @@ subgroup_mr_results_or <- map(str_c(results_folder, analyses), ~sensitivity_or_r
   mutate(label = ifelse(pval <= 0.05, exposure_outcome, '')) %>%
   mutate(group = ifelse(str_detect(exposure, 'HCM'), 'HCM -> X', 'X -> HCM')) %>% #Separate a group variable based on whether HCM is the exposure or outcome
     mutate(exposure_phenogroup = case_when( exposure %in% crf_vars ~ 'CRF',
-                                        exposure %in% related_disease_vars ~'Related Diseases',
+                                        # exposure %in% related_disease_vars ~'Related Diseases',
                                         exposure %in% pp_vars ~ 'PP',
                                         exposure %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         exposure %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
   mutate(outcome_phenogroup = case_when( outcome %in% crf_vars ~ 'CRF',
-                                        outcome %in% related_disease_vars ~'Related Diseases',
+                                        # outcome %in% related_disease_vars ~'Related Diseases',
                                         outcome %in% pp_vars ~ 'PP',
                                         outcome %in% fibrosis_vars ~ 'Myocardial Fibrosis',
                                         outcome %in% LV_diastolic_vars ~ 'LV Diastolic Function')) %>%
@@ -460,7 +678,7 @@ forest_plot_subgroup_hcm_exposure<- ggplot(filter(subgroup_mr_results_or, str_de
   facet_wrap(vars(outcome_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_exposure)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure.png',forest_plot_subgroup_hcm_exposure, dpi=600, width=6, height=3)
 
 forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
   geom_point(aes(x=b, y= forcats::fct_reorder(exposure_outcome, exposure), col=sarcgroup),
@@ -475,7 +693,7 @@ forest_plot_subgroup_hcm_outcome<- ggplot(filter(subgroup_mr_results_or, str_det
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')
 
 print(forest_plot_subgroup_hcm_outcome)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome.png',forest_plot_subgroup_hcm_outcome, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome.png',forest_plot_subgroup_hcm_outcome, dpi=600, width=6, height=3)
 ```
 
 ```{r}
@@ -492,7 +710,7 @@ forest_plot_subgroup_hcm_exposure_doubleOdds<- ggplot(filter(subgroup_mr_results
   labs(col='Sarcomere Subroup',  caption='95% confidence intervals shown')
 
 print(forest_plot_subgroup_hcm_exposure_doubleOdds)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure_doubleOdds.png',forest_plot_subgroup_hcm_exposure_doubleOdds, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmexposure_doubleOdds.png',forest_plot_subgroup_hcm_exposure_doubleOdds, dpi=600, width=6, height=3)
 
 #Plot the Odds Ratio of HCM Outcome instead of the Log(Odds Ratio)
 forest_plot_subgroup_hcm_outcome_OR<- ggplot(filter(subgroup_mr_results_or, str_detect(outcome, 'HCM')))+
@@ -507,8 +725,10 @@ forest_plot_subgroup_hcm_outcome_OR<- ggplot(filter(subgroup_mr_results_or, str_
   labs(col='Sarcomere Subgroup',  caption='95% confidence intervals shown')
 
 print(forest_plot_subgroup_hcm_outcome_OR)
-ggsave('../3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome_OR.png',forest_plot_subgroup_hcm_outcome_OR, dpi=600, width=6, height=3)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_subgroup_hcmoutcome_OR.png',forest_plot_subgroup_hcm_outcome_OR, dpi=600, width=6, height=3)
 ```
+
+
 
 ## Misc.
 

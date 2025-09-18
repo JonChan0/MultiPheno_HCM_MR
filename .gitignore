@@ -13,3 +13,6 @@
 *.tsv
 *.rds
 *.ipynb
+*.csv
+2_colocalisation/3_output/pdfs_unimputed.zip
+2_colocalisation/3_output/nonMTAG.xlsx

@@ -9,6 +9,7 @@ library(tictoc)
 library(ggmanh)
 library(readxl)
 library(MRPRESSO)
+library(mr.raps)
 
 args = commandArgs(trailingOnly = TRUE) #Allows input of arguments from Rscript
 
@@ -42,18 +43,20 @@ if (selected_exposure_snps_string != 'FALSE') {
 
 #Rescomp test code for bidirectional MR
 # Direction 1
-# exposure_input_path <- './levin22_hf_gwas_ssf/final/levin22_hf_gwas_ssf.h.tsv.gz'
+# exposure_input_path <- './henry25_hf_gwas_ssf/final/henry25_hf_gwas_ssf.h.tsv.gz'
 # outcome_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-# selected_exposure_snps <- '../1_data/gwas_associations/levin22_hf_associations.tsv'
+# selected_exposure_snps <- '../1_data/gwas_associations/henry25_hf_associations.xlsx'
 # output_path <- '../3_output/2_MR/'
 # exposure_name <- 'HF'
 # outcome_name <- 'HCM'
-# ld_clumping <- F
+# ld_clumping <- T
+# ld_eur_bed_file <- '/well/PROCARDIS/jchan/bin/ieugwasr/1kg_v3_ld/EUR'
+# plink_binary_path <- '/well/PROCARDIS/jchan/bin/plink'
 
 #Direction 2
 #32 GWS SNPs for HCM for HCM -> HF
 # exposure_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-# outcome_input_path <- './levin22_hf_gwas_ssf/final/levin22_hf_gwas_ssf.h.tsv.gz'
+# outcome_input_path <- './henry25_hf_gwas_ssf/final/henry25_hf_gwas_ssf.h.tsv.gz'
 # selected_exposure_snps <- c("rs1048302","rs11687178","rs3845778","rs2540277","rs6747402","rs7612736","rs4894803","rs2191446","rs11748963","rs3176326","rs12210733","rs66520020","rs7824244","rs35006907","rs2645210","rs2177843","rs11196085","rs17617337","rs12270374","rs182427065","rs7487962","rs41306688","rs113907726","rs8006225","rs8033459","rs28768976","rs7210446","rs2644262","rs6566955","rs12460541","rs62222424","rs5760054")
 # output_path <- '../3_output/2_MR/'
 # exposure_name <- 'HCM'
@@ -203,7 +206,6 @@ harmonised_data <- harmonise_data(
   action = 1
 ) #Assume that all alleles are presented on the forward strand
 rm(
-  exposure_clumped,
   exposure_instruments,
   exposure_summstats,
   outcome_summstats
@@ -214,7 +216,6 @@ rm(
 print('Running MR')
 
 #Mainline MR analyses
-##Select IVW with MRE if n_instruments >5, otherwise fixed-effects as per Burgess et al, 2023
 if (nrow(harmonised_data) == 1) {
   mainline_mr_method_list <- c('mr_wald_ratio')
 } else {
@@ -230,8 +231,7 @@ sensitivity_mr_method_list <- c(
   mainline_mr_method_list,
   'mr_weighted_median',
   'mr_weighted_mode',
-  'mr_egger_regression',
-  "mr_raps"
+  'mr_egger_regression'
 )
 sensitivity_mr_results <- mr(
   harmonised_data,
@@ -273,9 +273,17 @@ instrument_details_df <- harmonised_data %>%
     mr_keep # Indicates if SNP was kept after harmonisation checks
   )
 
-instrument_details_filename <- file.path(
+instrument_details_filename <- str_c(
   output_path,
-  paste0(exposure_name, '_to_', outcome_name, '_instrument_details.tsv')
+  '/',
+  exposure_name,
+  '_to_',
+  outcome_name,
+  '/',
+  exposure_name,
+  '_to_',
+  outcome_name,
+  '_instrument_details.tsv'
 )
 write_tsv(instrument_details_df, instrument_details_filename)
 print(paste("Instrument details saved to:", instrument_details_filename))
@@ -326,7 +334,7 @@ mrpresso_results <- tryCatch(
 
 ## This is the 2nd stage of MR-PRESSO as suggested by Mohsen Mazidi
 ## It removes the outliers suggested by MR-PRESSO and then reruns the global test only to ensure that there is no heterogeneity after outlier correction
-if (!is.null(mr_presso_results)) {
+if (!is.null(mrpresso_results)) {
   mrpresso_results$`MR-PRESSO results`[[
     'Outlier Test'
   ]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
@@ -374,24 +382,43 @@ if (!is.null(mr_presso_results)) {
     #If the global test rerun is successful, add back to the original mrpresso_results object
     mrpresso_results[
       'Outlier-removed MR-PRESSO results'
-    ] <- mrpresso_results_outlierremoved$`MR-PRESSO results`$`Global Test`
+    ] <- list(mrpresso_results_outlierremoved$`MR-PRESSO results`$`Global Test`)
   }
 }
 
-mrpresso_outliers <-
-  #Output plots and data --------------------------------------------------------------------------------
-  #Write out a table of results
-  if (
-    isFALSE(dir.exists(str_c(
-      output_path,
-      exposure_name,
-      '_to_',
-      outcome_name,
-      '/'
-    )))
-  ) {
-    dir.create(str_c(output_path, exposure_name, '_to_', outcome_name, '/')) #Create the directory if it doesn't exist already
+# Addendum for MR-RAPS
+mrraps_results <- tryCatch(
+  {
+    mr.raps(harmonised_data)
+  },
+  error = function(e) {
+    # This function is called ONLY if an error occurs
+    message(
+      'MR-RAPS failed.'
+    )
+
+    # Optional: print the original error message from R for debugging
+    message('Original R error message:')
+    message(e)
+
+    # Return a specific value (like NULL) on failure
+    return(NULL)
   }
+)
+
+#Output plots and data --------------------------------------------------------------------------------
+#Write out a table of results
+if (
+  isFALSE(dir.exists(str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/'
+  )))
+) {
+  dir.create(str_c(output_path, exposure_name, '_to_', outcome_name, '/')) #Create the directory if it doesn't exist already
+}
 
 #This outputs the print output as a txt file for the MendelianRandomization
 sink(
@@ -408,7 +435,7 @@ sink(
 print(MRpackage_ivw_results)
 sink(file = NULL)
 
-#This outputs the print output as a txt file for the MRPresso Pleiotropy Test
+#This outputs the MRPresso Pleiotropy Test
 if (!is.null(mrpresso_results)) {
   mrpresso_fileout <- str_c(
     output_path,
@@ -422,7 +449,26 @@ if (!is.null(mrpresso_results)) {
   saveRDS(mrpresso_results, mrpresso_fileout)
 }
 
-#Save
+if (!is.null(mrraps_results)) {
+  mrraps_fileout <- str_c(
+    output_path,
+    exposure_name,
+    '_to_',
+    outcome_name,
+    '/',
+    exposure_name,
+    '_MRRAPS_test.txt'
+  )
+
+  sink(
+    file = mrraps_fileout
+  )
+  mr.raps(harmonised_data)
+  sink(file = NULL)
+}
+
+
+#Save plots
 ggsave(
   str_c(
     output_path,
@@ -525,5 +571,5 @@ print('Constructing HTML Report')
 safe_mrreport <- safely(mr_report)
 safe_mrreport(
   harmonised_data,
-  output_path = str_c(output_path, exposure_name, '_to_', outcome_name, '/')
-) #Generate html report
+  output_path = str_c(output_path, exposure_name, '_to_', outcome_name)
+)

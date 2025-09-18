@@ -121,38 +121,15 @@ if (isTRUE(ld_clumping)) {
     plink_bin = plink_binary_path
   ) #Uses 1KGP EUR LD Panel
 
-  #Plot a Manhattan to determine validity of instruments after LD clumping
-  g2 <- manhattan_plot(
-    x = mutate(exposure_clumped, pos.exposure = as.numeric(pos.exposure)),
-    pval.colname = "pval.exposure",
-    chr.colname = "chr.exposure",
-    pos.colname = "pos.exposure",
-    plot.title = str_c(
-      'Manhattan plot for LD clumped SNPs with pvalue < 10^-5 for phenotype ',
-      exposure_name
-    ),
-    y.label = "-log10(pval)",
-    rescale = F,
-    label.colname = 'SNP'
-  )
-  #print(g)
-  ggsave(
-    str_c(
-      output_path,
-      exposure_name,
-      '_to_',
-      outcome_name,
-      '/',
-      exposure_name,
-      '_ldclumped_manhattan.png'
-    ),
-    g2,
-    dpi = 600
-  )
-  rm(g2)
+  #Print the number of SNPs that have been removed by LD clumping
+  original_number <- nrow(exposure_summstats)
+  postLDclumping_number <- nrow(exposure_clumped)
+  print(str_glue(
+    'Pre-LD clumping = {original_number} vs. Post-LD clumping = {postLDclumping_number} instruments'
+  ))
 
   if (nrow(exposure_clumped) == 0) {
-    print('LD clumping removed all SNPs or you ran out of API calls')
+    print('Error: LD clumping removed all SNPs')
     stop()
   }
 } else {
@@ -161,7 +138,6 @@ if (isTRUE(ld_clumping)) {
 
 toc()
 
-# print(head(exposure_clumped))
 exposure_instruments <- exposure_clumped
 rm(exposure_clumped, full_exposure_summstats)
 
@@ -254,7 +230,8 @@ sensitivity_mr_method_list <- c(
   mainline_mr_method_list,
   'mr_weighted_median',
   'mr_weighted_mode',
-  'mr_egger_regression'
+  'mr_egger_regression',
+  "mr_raps"
 )
 sensitivity_mr_results <- mr(
   harmonised_data,
@@ -347,19 +324,74 @@ mrpresso_results <- tryCatch(
   }
 )
 
-#Output plots and data --------------------------------------------------------------------------------
-#Write out a table of results
-if (
-  isFALSE(dir.exists(str_c(
-    output_path,
-    exposure_name,
-    '_to_',
-    outcome_name,
-    '/'
-  )))
-) {
-  dir.create(str_c(output_path, exposure_name, '_to_', outcome_name, '/')) #Create the directory if it doesn't exist already
+## This is the 2nd stage of MR-PRESSO as suggested by Mohsen Mazidi
+## It removes the outliers suggested by MR-PRESSO and then reruns the global test only to ensure that there is no heterogeneity after outlier correction
+if (!is.null(mr_presso_results)) {
+  mrpresso_results$`MR-PRESSO results`[[
+    'Outlier Test'
+  ]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
+    bind_cols('SNP' = harmonised_data$SNP)
+
+  mrpresso_outlier_indices <- mrpresso_results$`MR-PRESSO results`$`Distortion Test`$`Outliers Indices`
+  mrpresso_outlier_rsIDs <- slice(
+    mrpresso_results$`MR-PRESSO results`[['Outlier Test']],
+    mrpresso_outlier_indices
+  )$SNP
+
+  outlier_removed_harmonised_data <- harmonised_data %>%
+    filter(!SNP %in% mrpresso_outlier_rsIDs)
+
+  #Rerun the global test
+  mrpresso_results_outlierremoved <- tryCatch(
+    {
+      # This is the expression to 'try'
+      mr_presso(
+        data = outlier_removed_harmonised_data,
+        BetaOutcome = 'beta.outcome',
+        BetaExposure = 'beta.exposure',
+        SdOutcome = 'se.outcome',
+        SdExposure = 'se.exposure',
+        OUTLIERtest = F,
+        DISTORTIONtest = F
+      )
+    },
+    error = function(e) {
+      # This function is called ONLY if an error occurs
+      message(
+        'MR-PRESSO rerun post outlier removal failed.'
+      )
+
+      # Optional: print the original error message from R for debugging
+      message('Original R error message:')
+      message(e)
+
+      # Return a specific value (like NULL) on failure
+      return(NULL)
+    }
+  )
+
+  if (!is.null(mrpresso_results_outlierremoved)) {
+    #If the global test rerun is successful, add back to the original mrpresso_results object
+    mrpresso_results[
+      'Outlier-removed MR-PRESSO results'
+    ] <- mrpresso_results_outlierremoved$`MR-PRESSO results`$`Global Test`
+  }
 }
+
+mrpresso_outliers <-
+  #Output plots and data --------------------------------------------------------------------------------
+  #Write out a table of results
+  if (
+    isFALSE(dir.exists(str_c(
+      output_path,
+      exposure_name,
+      '_to_',
+      outcome_name,
+      '/'
+    )))
+  ) {
+    dir.create(str_c(output_path, exposure_name, '_to_', outcome_name, '/')) #Create the directory if it doesn't exist already
+  }
 
 #This outputs the print output as a txt file for the MendelianRandomization
 sink(
@@ -387,12 +419,6 @@ if (!is.null(mrpresso_results)) {
     exposure_name,
     '_MRPRESSO_test.rds'
   )
-
-  mrpresso_results$`MR-PRESSO results`[[
-    'Outlier Test'
-  ]] <- mrpresso_results$`MR-PRESSO results`[['Outlier Test']] %>%
-    bind_cols('SNP' = harmonised_data$SNP)
-
   saveRDS(mrpresso_results, mrpresso_fileout)
 }
 

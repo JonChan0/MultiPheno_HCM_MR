@@ -10,37 +10,121 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(readxl)
 rm(list=ls())
-
-setwd('2_scripts/')
 ```
 
 ## Import
 
 ```{r}
-gws_hcm_snps_29 <- read_excel('../1_data/gwas_associations/1_pleio_pruned/HCM_to__gwas_associations.xlsx')
+gws_hcm_snps<- read_excel('1_MR/1_data/gwas_associations/tadros25_hcm_nonMTAG_associations.xlsx') %>%
+  mutate(loci = str_c('LOC',row_number()))
 
-gws_hcm_snps<- read_excel('../1_data/gwas_associations/tadros25_hcm_nonMTAG_associations.xlsx') %>%
-  mutate(loci = str_c('LOC',row_number())) %>%
-  filter(rsid %in% gws_hcm_snps_29$rsid) #Filter to those which remain after pleiotropy pruning
-tadros25_table <- read_excel('../../EDA_HCMR/popgen/5_MR/input/gwas_summary_statistics/HCM/Tadros23_GWS_HCM_SNPs.xlsx') %>%
+#This retrieves the associated Locus for each SNP
+tadros25_table <- read_excel('../EDA_HCMR/popgen/5_MR/input/gwas_summary_statistics/HCM/Tadros23_GWS_HCM_SNPs.xlsx') %>%
   filter(`Lead SNP` %in% gws_hcm_snps$rsid) %>%
   select(rsid=`Lead SNP`, LocusName="Locus Name*")
 
 gws_hcm_snps<- gws_hcm_snps %>%
   left_join(tadros25_table, by=c('rsid'))
-rm(tadros25_table, gws_hcm_snps_29)
-
-summary_hyprcoloc <- read_excel('../3_output/5_coloc/nonMTAG.xlsx', sheet='hyprcoloc.nonMTAG')
-summary_coloc <- read_excel('../3_output/5_coloc/nonMTAG.xlsx',sheet='coloc_nonMTAG')
-
+rm(tadros25_table)
 ```
 
 ```{r}
-#Append the HCM GWS lead SNPs + their mapped loci to the HyprColoc results
-hyprcoloc <- left_join(gws_hcm_snps, summary_hyprcoloc,by='loci')
+#This imports in the data from colocalisation analysis via either Hyprcoloc or pairwise coloc
+#It imports in colocalisation analysis results from the 1) all MR-prioritised traits + HCM and 2)from the HF, HF subtypes + HCM
 
+coloc_importer <- function(excel_path, sheet_name, gws_hcm_snps){
 
-filtered_coloc <- summary_coloc %>%
-  filter(LOCI %in% c('LOC18','LOC28'))
+  tb <- read_excel(excel_path, sheet=sheet_name)
+  colnames(tb)[1] <- 'loci'
+  output_tb <- tb %>%
+    left_join(gws_hcm_snps, by='loci') #Adds the rsID of the variant and the mapped LocusName
+
+  return(output_tb)
+}
+
+results_path <- '2_colocalisation/3_output/'
+summaryMR_colocs <- map(c('hyprcoloc.nonMTAG_V3','coloc_nonMTAG_V3'), ~coloc_importer(str_c(results_path, 'coloc_henry_hf_subtypes.xlsx'),sheet_name = .,gws_hcm_snps))
+hfMR_colocs <- map(c('hyprcoloc.HF_subtypes','coloc_HF_subtypes'), ~coloc_importer(str_c(results_path, 'coloc_henry_hf_subtypes.xlsx'),sheet_name = ., gws_hcm_snps))
+
+#This creates a label mapping tibble
+label_tb <- tibble('phenotype'=unique(summaryMR_colocs[[2]][[2]])) 
+label_tb$label <- c('NTproBNP','TnT', 'BMI', 'DBP', 'HF', 'Longitudinal_DSR','Radial_DSR')
 ```
 
+This plots an overall summary heatmap from the pairwise coloc analyses over all loci
+
+```{r}
+
+summary_coloc_heatmap <- function(input_tb, label_tb,h4_threshold = 0.4, excluded_phenotypes = c('longdsr','radialdsr'), phenotype_levels = c('BMI','DBP','NTproBNP', 'TnT', 'HF', 'Longitudinal_DSR', 'Radial_DSR'), output_path = '2_colocalisation/3_output/summary_plots/'){
+
+  colnames(input_tb)[2] <- 'phenotype'
+  plot_tb <- input_tb %>%
+    mutate(variant_label = str_c(LocusName, ' | ', rsid)) %>%
+    filter(! phenotype %in% excluded_phenotypes) %>%
+    filter(H4 >= h4_threshold) %>%
+    left_join(label_tb, by='phenotype') %>%
+    mutate(label = factor(label, levels=phenotype_levels))
+
+
+  heatmap <- ggplot(plot_tb, aes(y=variant_label, x=label) )+
+    geom_tile(aes(fill=H4))+
+    xlab('Non-HCM Phenotype')+
+    ylab('Mapped Locus | Variant')+
+    labs(caption = str_c('Results filtered for H4 probability >=', h4_threshold))+
+    scale_fill_viridis_b()
+
+  print(heatmap)
+  ggsave(str_glue('{output_path}/summary_coloc_heatmap.png'), dpi=600, height = 6, width = 6)
+
+}
+
+summary_coloc_heatmap(summaryMR_colocs[[2]], label_tb)
+```
+
+This plots a stacked LocusZoom plot for the top loci e.g MYOZ1.
+It uses the Ensembl v95 (as per GWAS Summstats Harmoniser's reference VCF file)
+
+```{r}
+library(locuszoomr)
+library(AnnotationHub)
+library(patchwork)
+
+#Setup the Ensembl database for v95 to provide gene tracks
+ah <- AnnotationHub()
+ens_v <- query(ah, c("EnsDb", "Homo sapiens"))
+ensDb_v95 <- ah[["AH67950"]]
+rm(ens_v)
+
+#Setup LDlink API
+token <- readRDS('1_MR/2_Scripts/ldlinkR_API_token.rds')
+
+
+stacked_lz_plot <- function(input_folder, gene_name = c('MYOZ1','SYNPO2L'),index_snp = 'rs2177843',phenotype_names = c('NTproBNP','TnT','HF','DBP'), output_folder='2_colocalisation/3_output/summary_plots/'){
+
+  filenames <- list.files(input_folder)
+  sumstats <- map(str_c(input_folder, '/',filenames), ~read_tsv(.))
+  names(sumstats) <- phenotype_names
+
+  locus_plots <- vector('list',length(sumstats))
+
+  for (i in seq_along(phenotype_names)){
+    loc <- locus(data = sumstats[[i]], flank = 1e5,chrom='chromosome',pos='base_pair_location',p='p_value',labs='rsid',index_snp=index_snp,ens_db = ensDb_v95)
+    loc <- link_LD(loc, token = token)
+    loc <- link_recomb(loc)
+
+    locus_plots[[i]] <- gg_scatter(loc, recomb_col='red') + labs(title = phenotype_names[i])
+  }
+  gene_tracks <- gg_genetracks(locus(data = sumstats[[1]], flank = 1e5,chrom='chromosome',pos='base_pair_location',p='p_value',labs='rsid',index_snp=index_snp,ens_db = ensDb_v95), highlight=gene_name)
+  
+  output_name <- str_c('stacked_lz_', str_c(gene_name, collapse='_'))
+  stacked_plot <- wrap_plots(c(locus_plots, list(gene_tracks)),  ncol=1)
+  print(stacked_plot)
+  ggsave(str_glue('{output_folder}{output_name}.png'), dpi=600, height=12, width=9)
+}
+
+stacked_lz_plot("2_colocalisation/3_output/gwas_summstat_subsets/MYOZ1/")
+
+
+
+
+```

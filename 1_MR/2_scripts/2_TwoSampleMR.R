@@ -42,7 +42,6 @@ if (selected_exposure_snps_string != 'FALSE') {
 }
 
 #Rescomp test code for bidirectional MR
-# Direction 1
 # exposure_input_path <- './henry25_hf_gwas_ssf/final/henry25_hf_gwas_ssf.h.tsv.gz'
 # outcome_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
 # selected_exposure_snps <- '../1_data/gwas_associations/henry25_hf_associations.xlsx'
@@ -52,25 +51,6 @@ if (selected_exposure_snps_string != 'FALSE') {
 # ld_clumping <- T
 # ld_eur_bed_file <- '/well/PROCARDIS/jchan/bin/ieugwasr/1kg_v3_ld/EUR'
 # plink_binary_path <- '/well/PROCARDIS/jchan/bin/plink'
-
-#Direction 2
-#32 GWS SNPs for HCM for HCM -> HF
-# exposure_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-# outcome_input_path <- './henry25_hf_gwas_ssf/final/henry25_hf_gwas_ssf.h.tsv.gz'
-# selected_exposure_snps <- c("rs1048302","rs11687178","rs3845778","rs2540277","rs6747402","rs7612736","rs4894803","rs2191446","rs11748963","rs3176326","rs12210733","rs66520020","rs7824244","rs35006907","rs2645210","rs2177843","rs11196085","rs17617337","rs12270374","rs182427065","rs7487962","rs41306688","rs113907726","rs8006225","rs8033459","rs28768976","rs7210446","rs2644262","rs6566955","rs12460541","rs62222424","rs5760054")
-# output_path <- '../3_output/2_MR/'
-# exposure_name <- 'HCM'
-# outcome_name <- 'HF'
-# ld_clumping <- F
-
-#Checking maxLAVi -> HCM
-# exposure_input_path <- './thanaj22_maxLAVi_gwas_ssf/final/thanaj22_maxLAVi_gwas_ssf.h.tsv.gz'
-# outcome_input_path <- './tadros24_hcm_gwas_ssf/final/tadros24_hcm_gwas_ssf.h.tsv.gz'
-# selected_exposure_snps <- '../1_data/gwas_associations/thanaj22_maxLAVi_associations.tsv'
-# output_path <- '../3_output/2_MR/'
-# exposure_name <- 'maxLAVi'
-# outcome_name <- 'HCM'
-# ld_clumping <- F
 
 #---------------------------------------------------------------------------------
 #Load the exposure GWAS summary statistics + Extract the instruments
@@ -334,6 +314,8 @@ mrpresso_results <- tryCatch(
 
 ## This is the 2nd stage of MR-PRESSO as suggested by Mohsen Mazidi
 ## It removes the outliers suggested by MR-PRESSO and then reruns the global test only to ensure that there is no heterogeneity after outlier correction
+## This also only runs if there are outliers
+
 if (!is.null(mrpresso_results)) {
   mrpresso_results$`MR-PRESSO results`[[
     'Outlier Test'
@@ -341,48 +323,53 @@ if (!is.null(mrpresso_results)) {
     bind_cols('SNP' = harmonised_data$SNP)
 
   mrpresso_outlier_indices <- mrpresso_results$`MR-PRESSO results`$`Distortion Test`$`Outliers Indices`
-  mrpresso_outlier_rsIDs <- slice(
-    mrpresso_results$`MR-PRESSO results`[['Outlier Test']],
-    mrpresso_outlier_indices
-  )$SNP
 
-  outlier_removed_harmonised_data <- harmonised_data %>%
-    filter(!SNP %in% mrpresso_outlier_rsIDs)
+  if (typeof(mrpresso_outlier_indices) != "character") {
+    mrpresso_outlier_rsIDs <- slice(
+      mrpresso_results$`MR-PRESSO results`[['Outlier Test']],
+      mrpresso_outlier_indices
+    )$SNP
 
-  #Rerun the global test
-  mrpresso_results_outlierremoved <- tryCatch(
-    {
-      # This is the expression to 'try'
-      mr_presso(
-        data = outlier_removed_harmonised_data,
-        BetaOutcome = 'beta.outcome',
-        BetaExposure = 'beta.exposure',
-        SdOutcome = 'se.outcome',
-        SdExposure = 'se.exposure',
-        OUTLIERtest = F,
-        DISTORTIONtest = F
+    outlier_removed_harmonised_data <- harmonised_data %>%
+      filter(!SNP %in% mrpresso_outlier_rsIDs)
+
+    #Rerun the global test
+    mrpresso_results_outlierremoved <- tryCatch(
+      {
+        # This is the expression to 'try'
+        mr_presso(
+          data = outlier_removed_harmonised_data,
+          BetaOutcome = 'beta.outcome',
+          BetaExposure = 'beta.exposure',
+          SdOutcome = 'se.outcome',
+          SdExposure = 'se.exposure',
+          OUTLIERtest = F,
+          DISTORTIONtest = F
+        )
+      },
+      error = function(e) {
+        # This function is called ONLY if an error occurs
+        message(
+          'MR-PRESSO rerun post outlier removal failed.'
+        )
+
+        # Optional: print the original error message from R for debugging
+        message('Original R error message:')
+        message(e)
+
+        # Return a specific value (like NULL) on failure
+        return(NULL)
+      }
+    )
+
+    if (!is.null(mrpresso_results_outlierremoved)) {
+      #If the global test rerun is successful, add back to the original mrpresso_results object
+      mrpresso_results[
+        'Outlier-removed MR-PRESSO results'
+      ] <- list(
+        mrpresso_results_outlierremoved$`MR-PRESSO results`$`Global Test`
       )
-    },
-    error = function(e) {
-      # This function is called ONLY if an error occurs
-      message(
-        'MR-PRESSO rerun post outlier removal failed.'
-      )
-
-      # Optional: print the original error message from R for debugging
-      message('Original R error message:')
-      message(e)
-
-      # Return a specific value (like NULL) on failure
-      return(NULL)
     }
-  )
-
-  if (!is.null(mrpresso_results_outlierremoved)) {
-    #If the global test rerun is successful, add back to the original mrpresso_results object
-    mrpresso_results[
-      'Outlier-removed MR-PRESSO results'
-    ] <- list(mrpresso_results_outlierremoved$`MR-PRESSO results`$`Global Test`)
   }
 }
 

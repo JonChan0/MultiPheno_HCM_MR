@@ -87,6 +87,7 @@ label_tb <- as_tibble(c('HCM',crf_vars,fibrosis_vars,LV_diastolic_vars, pp_vars)
     T ~ label
   ))
 
+saveRDS(label_tb, '1_MR/3_output/label_tb.rds')
 ```
 ```{r}
 perunit_to_perSD_normaliser <- function(input_tb,pooled_sds, type='mr_results_or'){

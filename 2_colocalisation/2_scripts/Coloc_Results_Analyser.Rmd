@@ -60,8 +60,8 @@ summary_coloc_heatmap <- function(input_tb, label_tb,h4_threshold = 0.4, exclude
   colnames(input_tb)[2] <- 'phenotype'
   plot_tb <- input_tb %>%
     mutate(variant_label = str_c(LocusName, ' | ', rsid)) %>%
-    filter(! phenotype %in% excluded_phenotypes) %>%
-    filter(H4 >= h4_threshold) %>%
+    dplyr::filter(! phenotype %in% excluded_phenotypes) %>%
+    dplyr::filter(H4 >= h4_threshold) %>%
     left_join(label_tb, by='phenotype') %>%
     mutate(label = factor(label, levels=phenotype_levels))
 
@@ -74,7 +74,7 @@ summary_coloc_heatmap <- function(input_tb, label_tb,h4_threshold = 0.4, exclude
     scale_fill_viridis_b()
 
   print(heatmap)
-  ggsave(str_glue('{output_path}/summary_coloc_heatmap.png'), dpi=600, height = 6, width = 6)
+  ggsave(str_glue('{output_path}/summary_coloc_heatmap.png'), dpi=600, height = 6, width = 7)
 
 }
 
@@ -99,7 +99,7 @@ rm(ens_v)
 token <- readRDS('1_MR/2_Scripts/ldlinkR_API_token.rds')
 
 
-stacked_lz_plot <- function(input_folder, gene_name = c('MYOZ1','SYNPO2L'),index_snp = 'rs2177843',phenotype_names = c('NTproBNP','TnT','HF','DBP'), output_folder='2_colocalisation/3_output/summary_plots/'){
+stacked_lz_plot <- function(input_folder, gene_name = c('MYOZ1','SYNPO2L'),index_snp = 'rs2177843',phenotype_names = c('NTproBNP','TnT','HF','DBP','HCM'), output_folder='2_colocalisation/3_output/summary_plots/'){
 
   filenames <- list.files(input_folder)
   sumstats <- map(str_c(input_folder, '/',filenames), ~read_tsv(.))

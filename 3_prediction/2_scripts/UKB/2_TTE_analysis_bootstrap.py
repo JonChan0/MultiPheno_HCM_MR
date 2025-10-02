@@ -128,7 +128,7 @@ if __name__ == '__main__':
     parser.add_argument('--filename', type=str, required=True, help='Input TSV file path.')
     parser.add_argument('--n_bootstraps', type=int, default=1, help='Number of bootstrap samples.')
     parser.add_argument('--k_folds', type=int, default=5, help='The "k" for k-fold cross-validation.')
-    parser.add_argument('--preds', required=True, help='List of predictors to use in the model.')
+    parser.add_argument('--preds', required=True, type=str,help='List of predictors to use in the model.')
     parser.add_argument('--output_filename', type=str, required=True, help='Name for the output TSV file.')
     parser.add_argument('--regularisation', type=str, default=None, help="Type of regularisation. Options: 'ridge', 'lasso', 'ElasticNet'. Leave blank for unregularised.")
 

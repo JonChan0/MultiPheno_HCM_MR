@@ -9,12 +9,12 @@
 # MODEL_NAME="nonMRpreds"
 # REGULARISATION="" # Options: "ridge", "lasso", "ElasticNet", or "" (for unregularised)
 
-# PREDICTORS='sex_Male,bmi,dbp,HF_prevalent,eGFR,AF_prevalent,CAD_prevalent,stroke_prevalent,T2D_prevalent,smoking_initiation'
-# MODEL_NAME="allpreds"
+PREDICTORS='sex_Male,bmi,dbp,HF_prevalent,eGFR,AF_prevalent,CAD_prevalent,stroke_prevalent,T2D_prevalent,smoking_initiation'
+MODEL_NAME="allpreds"
 # REGULARISATION="" # Options: "ridge", "lasso", "ElasticNet", or "" (for unregularised)
 # REGULARISATION="ridge"
 # REGULARISATION="lasso"
-# REGULARISATION="ElasticNet"
+REGULARISATION="ElasticNet"
 
 #------------------------------------------------------------------------------------------------------
 # --- Define required parameters ---

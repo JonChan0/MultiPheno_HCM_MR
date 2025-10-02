@@ -76,7 +76,7 @@ def fit_and_score_bootstrap_cv(filename, n_bootstraps, k_folds,preds, output_fil
                 estimator.fit(x_train, y_train)
 
             elif regularisation == 'ElasticNet':
-                estimator = CoxnetSurvivalAnalysis(l1_ratio=0.9, alpha_min_ratio='auto', max_iter=100000)
+                estimator = CoxnetSurvivalAnalysis(l1_ratio=0.5, alpha_min_ratio='auto', max_iter=100000)
                 estimator.fit(x_train, y_train)
 
             else:

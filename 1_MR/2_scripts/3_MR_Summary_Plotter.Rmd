@@ -735,14 +735,15 @@ ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_HFonly.png',com
 ```
 
 ```{r}
-#N.B To get the numerical values out from the mr_results
-num_values <- mr_results%>%
-  filter(exposure_outcome %in% c('HCM -> hcmr_NTproBNP',
-                                    'HCM -> hcmr_TnT',
-                                    'HCM -> radialdsr',
-                                    'HCM -> longdsr')) %>%
-  mutate(b = b*log(2), lo_ci = lo_ci*log(2), up_ci = up_ci * log(2)) %>%
-  select(-contains('or'))
+# #N.B To get the numerical values out from the mr_results - see filtered_sig_mr_results
+# num_values <- mr_results%>%
+#   filter(exposure_outcome %in% c('HCM -> hcmr_NTproBNP',
+#                                     'HCM -> hcmr_TnT',
+#                                     'BMI -> HCM',
+#                                     'DBP -> HCM')) %>%
+#   filter(method %in% c('Inverse variance weighted','Wald ratio')) %>%
+#   mutate(b = b*log(2), lo_ci = lo_ci*log(2), up_ci = up_ci * log(2)) %>%
+#   select(-contains('or'))
 
 ```
 

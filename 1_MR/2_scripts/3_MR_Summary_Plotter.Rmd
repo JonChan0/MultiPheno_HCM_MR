@@ -12,7 +12,7 @@ library(ggrepel)
 library(patchwork)
 rm(list=ls())
 
-theme_set(theme_classic())
+theme_set(theme_classic(base_size=14))
 ```
 
 This Rmd notebook details the summary plotting of the results from bidirectional , 2-sample MR of HCM-related traits with HCM case/control status.
@@ -530,7 +530,7 @@ summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse varianc
     guides(shape = guide_legend(nrow=2),col=guide_legend(nrow=2))
 
   print(summary_scatter)
-  ggsave(str_c(output_folder,'/MR_summary_plot.png'),summary_scatter, dpi=600, width=9, height=6)
+  ggsave(str_c(output_folder,'/MR_summary_plot.png'),summary_scatter, dpi=600, width=10, height=7.5)
 
   if(isTRUE(conf_int)){
     summary_scatter_confint <- summary_scatter +
@@ -538,7 +538,7 @@ summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse varianc
       labs(subtitle = 'Error bars = 95% confidence interval')
 
     print(summary_scatter_confint)
-    ggsave(str_c(output_folder,'/MR_summary_plot_confint.png'),summary_scatter_confint, dpi=600, width=9, height=6)
+    ggsave(str_c(output_folder,'/MR_summary_plot_confint.png'),summary_scatter_confint, dpi=600, width=10, height=7.5)
   }
 
   #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
@@ -617,7 +617,7 @@ I also plot the forest plot broken down into 2 plots instead and where HCM or HF
 ```{r}
 #This plots the forest plot where HCM = exposure
 forest_plot_hcmexposure <- ggplot(filter(filtered_sig_mr_results, outcome != 'HF', exposure=='HCM') %>%
-    mutate(scaled_b = beta*log(2)) %>% #i.e if HCM = exposure, scale so that the beta is per doubling of Odds(HCM)
+    mutate(scaled_b = beta*log(2)) %>% #i.e if HCM = exposure, scale so that the beta (originally SD per log-odds(HCM)) is per doubling of Odds(HCM)
     mutate(scaled_lo_ci = lo_ci*log(2),
         scaled_up_ci = up_ci*log(2)
         ))+#Plot this plot without HF signal
@@ -654,7 +654,7 @@ ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome_noHF.png',for
 #Output combined plot
 combined_forest_plot <- forest_plot_hcmexposure / forest_plot_hcmoutcome
 print(combined_forest_plot)
-ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_noHF.png',combined_forest_plot, dpi=600, width=9, height=6)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_noHF.png',combined_forest_plot, dpi=600, width=6, height=4)
 
 ```
 

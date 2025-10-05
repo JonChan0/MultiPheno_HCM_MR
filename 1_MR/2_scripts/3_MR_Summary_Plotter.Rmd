@@ -597,14 +597,16 @@ This plots the overall forest plot.
 
 ```{r}
 forest_plot_overall <- ggplot(filtered_sig_mr_results)+
-  geom_point(aes(x=beta, y= exposure_outcome_label, col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome_label, col=nonHCM_phenogroup))+
+  geom_point(aes(x=beta, y= exposure_outcome_label,fill=nonHCM_phenogroup),size = 3, shape = 23)+
+  geom_errorbarh(aes(xmin=lo_ci, xmax=up_ci, y=exposure_outcome_label, col=nonHCM_phenogroup),height = 0.1, linewidth = 0.8)+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
   xlab('Change in Outcome per Change in Exposure')+
   ylab('Exposure -> Outcome')+
-  labs(col='Non-HCM Phenotype Group')+
+  labs(fill='Non-HCM Phenotype Group')+
   facet_wrap(vars(exposure_plot_group), nrow=3, drop=TRUE, scales='free')+
-  scale_colour_manual(values = colour_map)
+  scale_colour_manual(values = colour_map)+
+  scale_fill_manual(values = colour_map)+
+  theme(legend.position='none')
 
 print(forest_plot_overall)
 ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot.png',forest_plot_overall, dpi=600, width=9, height=6)
@@ -615,17 +617,19 @@ I also plot the forest plot broken down into 2 plots instead and where HCM or HF
 ```{r}
 #This plots the forest plot where HCM = exposure
 forest_plot_hcmexposure <- ggplot(filter(filtered_sig_mr_results, outcome != 'HF', exposure=='HCM') %>%
-    mutate(scaled_b = exp(beta*log(2))) %>% #i.e if HCM = exposure, scale so that the beta is per doubling of Odds(HCM)
-    mutate(scaled_lo_ci = exp(lo_ci*log(2)),
-        scaled_up_ci = exp(up_ci*log(2))
+    mutate(scaled_b = beta*log(2)) %>% #i.e if HCM = exposure, scale so that the beta is per doubling of Odds(HCM)
+    mutate(scaled_lo_ci = lo_ci*log(2),
+        scaled_up_ci = up_ci*log(2)
         ))+#Plot this plot without HF signal
-  geom_point(aes(x=scaled_b, y= exposure_outcome_label, col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome_label, col=nonHCM_phenogroup))+
+  geom_point(aes(x=scaled_b, y= exposure_outcome_label,fill=nonHCM_phenogroup),size = 3, shape = 23)+
+  geom_errorbarh(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome_label, col=nonHCM_phenogroup),height = 0.1, linewidth = 0.8)+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
   xlab('Change in Outcome (SD) per Doubling of Odds(HCM)')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group')+
-  scale_colour_manual(values = colour_map)
+  scale_colour_manual(values = colour_map)+
+  scale_fill_manual(values = colour_map)+
+  theme(legend.position='none')
 
 print(forest_plot_hcmexposure)
 ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmexposure_noHF.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
@@ -633,13 +637,15 @@ ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmexposure_noHF.png',fo
 #This plots the forest plot where HCM = outcome
 
 forest_plot_hcmoutcome <- ggplot(filter(filtered_sig_mr_results, exposure != 'HF', outcome=='HCM'))+ #Plot this plot without HF signal
-  geom_point(aes(x=or, y= exposure_outcome_label, col=nonHCM_phenogroup))+
-  geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome_label, col=nonHCM_phenogroup))+
+  geom_point(aes(x=or, y= exposure_outcome_label, fill=nonHCM_phenogroup),size = 3, shape = 23)+
+  geom_errorbarh(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome_label, col=nonHCM_phenogroup),height = 0.1, linewidth = 0.8)+
   geom_vline(xintercept=1, col='black', linetype='dashed')+
   xlab('Per-SD Odds Ratio(HCM)')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group')+
-  scale_colour_manual(values = colour_map)
+  scale_colour_manual(values = colour_map)+
+  scale_fill_manual(values = colour_map)+
+  theme(legend.position='none')
 
 print(forest_plot_hcmoutcome)
 ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome_noHF.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
@@ -707,27 +713,31 @@ hfsubgroup_merged_results <- bind_rows(hfsubgroup_merged_results, filter(filtere
     'HCM -> HFrEF','HFrEF -> HCM',
     'HCM -> HF','HF -> HCM'
   ))) %>%
-  mutate(scaled_b = exp(beta*log(2))) %>% #i.e if HCM -> HF, express as OR(HF) per doubling (Odds) of HCM and if HF -> HCM, express as OR(HCM) per doubling (Odds) of HF
-  mutate(scaled_lo_ci = exp(lo_ci*log(2)),
-        scaled_up_ci = exp(up_ci*log(2))
+  mutate(scaled_or = exp(beta*log(2))) %>% #i.e if HCM -> HF, express as OR(HF) per doubling (Odds) of HCM and if HF -> HCM, express as OR(HCM) per doubling (Odds) of HF
+  mutate(scaled_or_lowci = exp(lo_ci*log(2)),
+        scaled_or_highci = exp(up_ci*log(2))
   )
 
 #Now plot the HF plots by themselves for both HCM -> HF and HF -> HCM
 forest_plot_hcmexposure_hf <- ggplot(filter(hfsubgroup_merged_results ,str_detect(outcome,'HF')))+
-  geom_point(aes(x=scaled_b, y= exposure_outcome_label, col = outcome))+
-  geom_errorbar(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome_label, col = outcome))+
+  geom_point(aes(x=scaled_or, y= exposure_outcome_label, fill = outcome),size = 3, shape = 23)+
+  geom_errorbar(aes(xmin=scaled_or_lowci, xmax=scaled_or_highci, y=exposure_outcome_label, col = outcome))+
   geom_vline(xintercept=1, col='black', linetype='dashed')+
   xlab('Odds Ratio (HF) per Doubling of Odds(HCM)')+
   ylab('Exposure -> Outcome')+
-  scale_colour_manual(values = hf_colour_map)
+  scale_colour_manual(values = hf_colour_map)+
+  scale_fill_manual(values = hf_colour_map)+
+  theme(legend.position='none')
 
 forest_plot_hcmoutcome_hf <- ggplot(filter(hfsubgroup_merged_results, str_detect(exposure,'HF')))+
-  geom_point(aes(x=or, y= exposure_outcome_label, col=exposure))+
-  geom_errorbar(aes(xmin=or_lci95, xmax=or_uci95, y=exposure_outcome_label, col=exposure))+
+  geom_point(aes(x=scaled_or, y= exposure_outcome_label, fill=exposure),size = 3, shape = 23)+
+  geom_errorbar(aes(xmin=scaled_or_lowci, xmax=scaled_or_highci, y=exposure_outcome_label, col=exposure))+
   geom_vline(xintercept=1, col='black', linetype='dashed')+
   xlab('Odds Ratio(HCM) per Doubling of Odds(HF)')+
   ylab('Exposure -> Outcome')+
-  scale_colour_manual(values = hf_colour_map)
+  scale_colour_manual(values = hf_colour_map)+
+  scale_fill_manual(values = hf_colour_map)+
+  theme(legend.position='none')
 
 combined_forest_plot_hf <- forest_plot_hcmexposure_hf / forest_plot_hcmoutcome_hf
 print(combined_forest_plot_hf)

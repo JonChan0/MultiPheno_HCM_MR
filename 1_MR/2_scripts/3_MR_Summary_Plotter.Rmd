@@ -475,7 +475,7 @@ rm(MRPRESSO_results, mr_raps_results, MRpackage_results)
 This plots a volcano plot of all the MR analyses with BH's p-value correction for multiple testing correction (controls FWER but with greater power than Bonferroni and also does not assume independence between tests).
 
 ```{r}
-summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse variance weighted|Wald ratio', output_folder = '1_MR/3_output/3_summary_plots/', conf_int=T, point_size= 3){
+summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse variance weighted|Wald ratio', output_folder = '1_MR/3_output/3_summary_plots/', conf_int=T, point_size= 4){
 
   plot_tb <- filter(input_tb, str_detect(method, method_choice))
 
@@ -530,7 +530,7 @@ summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse varianc
     guides(shape = guide_legend(nrow=2),col=guide_legend(nrow=2))
 
   print(summary_scatter)
-  ggsave(str_c(output_folder,'/MR_summary_plot.png'),summary_scatter, dpi=600, width=10, height=7.5)
+  ggsave(str_c(output_folder,'/MR_summary_plot.png'),summary_scatter, dpi=600, width=9, height=6)
 
   if(isTRUE(conf_int)){
     summary_scatter_confint <- summary_scatter +
@@ -538,7 +538,7 @@ summary_plotter <- function(input_tb, label_tb, method_choice = 'Inverse varianc
       labs(subtitle = 'Error bars = 95% confidence interval')
 
     print(summary_scatter_confint)
-    ggsave(str_c(output_folder,'/MR_summary_plot_confint.png'),summary_scatter_confint, dpi=600, width=10, height=7.5)
+    ggsave(str_c(output_folder,'/MR_summary_plot_confint.png'),summary_scatter_confint, dpi=600, width=9, height=6)
   }
 
   #Note that the RV traits all provide GWAS summary statistics/betas from the inverse-rank-normalised phenotypes. So their phenotype will be measured in SD.
@@ -624,15 +624,15 @@ forest_plot_hcmexposure <- ggplot(filter(filtered_sig_mr_results, outcome != 'HF
   geom_point(aes(x=scaled_b, y= exposure_outcome_label,fill=nonHCM_phenogroup),size = 3, shape = 23)+
   geom_errorbarh(aes(xmin=scaled_lo_ci, xmax=scaled_up_ci, y=exposure_outcome_label, col=nonHCM_phenogroup),height = 0.1, linewidth = 0.8)+
   geom_vline(xintercept=0, col='black', linetype='dashed')+
-  xlab('Change in Outcome (SD) per Doubling of Odds(HCM)')+
+  xlab('Change in Outcome (SD)\nper Doubling of Odds(HCM)')+
   ylab('Exposure -> Outcome')+
   labs(col='Non-HCM Phenotype Group')+
   scale_colour_manual(values = colour_map)+
   scale_fill_manual(values = colour_map)+
   theme(legend.position='none')
 
-print(forest_plot_hcmexposure)
-ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmexposure_noHF.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
+# print(forest_plot_hcmexposure)
+# ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmexposure_noHF.png',forest_plot_hcmexposure, dpi=600, width=6, height=3)
 
 #This plots the forest plot where HCM = outcome
 
@@ -647,14 +647,14 @@ forest_plot_hcmoutcome <- ggplot(filter(filtered_sig_mr_results, exposure != 'HF
   scale_fill_manual(values = colour_map)+
   theme(legend.position='none')
 
-print(forest_plot_hcmoutcome)
-ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome_noHF.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
+# print(forest_plot_hcmoutcome)
+# ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_hcmoutcome_noHF.png',forest_plot_hcmoutcome, dpi=600, width=6, height=3)
 
 
 #Output combined plot
 combined_forest_plot <- forest_plot_hcmexposure / forest_plot_hcmoutcome
 print(combined_forest_plot)
-ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_noHF.png',combined_forest_plot, dpi=600, width=6, height=4)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_noHF.png',combined_forest_plot, dpi=600, width=6, height=4.5)
 
 ```
 
@@ -741,7 +741,7 @@ forest_plot_hcmoutcome_hf <- ggplot(filter(hfsubgroup_merged_results, str_detect
 
 combined_forest_plot_hf <- forest_plot_hcmexposure_hf / forest_plot_hcmoutcome_hf
 print(combined_forest_plot_hf)
-ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_HFonly.png',combined_forest_plot_hf, dpi=600, width=6, height=4)
+ggsave('1_MR/3_output/3_summary_plots/sig_MR_forestplot_combined_HFonly.png',combined_forest_plot_hf, dpi=600, width=6, height=4.5)
 ```
 
 ```{r}

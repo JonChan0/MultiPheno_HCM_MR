@@ -15,3 +15,4 @@
 *.ipynb
 *.csv
 2_colocalisation/3_output/*
+3_prediction/2_scripts/archive/*

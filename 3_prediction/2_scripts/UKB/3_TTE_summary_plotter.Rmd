@@ -1,0 +1,379 @@
+---
+title: "TTE Bootstrap Summary Plotting"
+output: html_document
+date: "2025-10-02"
+---
+
+This performs summary plotting from the bootstrap-derived validation-fold evaluation metrics for incident Cox regression in UKB and All of Us.
+It also provides plotting for other functions.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(survival)
+library(broom)
+library(patchwork)
+rm(list=ls())
+```
+
+## Import 
+
+This imports in the UKB validation-fold results.
+
+```{r}
+bootstrap_folder <- '3_prediction/3_output/2_TTE_Analysis/UKB/bootstrap/'
+bootstrap_files <- list.files(bootstrap_folder, pattern='[^plots]')
+
+#This defines the model names (i.e feature subset) and the degree of regularisation for each model
+modelnames <- str_match(bootstrap_files, '([^_]+)\\.tsv')[,2]
+regularisation <- str_match(bootstrap_files, 'fold_([^_]+)')[,2]
+
+for (i in seq_along(regularisation)){
+    if(is.na(regularisation[i])){ regularisation[i] <- 'unreg'} 
+}
+
+#This imports in the bootstrap_results
+res <- map(str_c(bootstrap_folder, bootstrap_files), ~read_tsv(.))
+rm(bootstrap_folder, bootstrap_files)
+names(res) <- str_c(modelnames, regularisation, sep='_')
+```
+
+This creates a colour palette for plotting to ensure consistency across plots and a label mapping as well.
+
+```{r}
+palette_vector <- c(
+    'MRpreds_unreg' = '#1b9e77',
+    'nonMRpreds_unreg' = '#d95f02',
+    'allpreds_unreg' = '#7570b3',
+    'allpreds_ridge' = '#e7298a',
+    'allpreds_lasso' = '#66a61e',
+    'allpreds_ElasticNet' = '#e6ab02',
+    'cov_unreg' = '#666666'
+)
+
+label_vector <- c(
+    'MRpreds_unreg' = 'MR-Prioritised Cox',
+    'nonMRpreds_unreg' = 'Non-MR-Prioritised Cox',
+    'allpreds_unreg' = 'Cox',
+    'allpreds_ridge' = 'Ridge Cox',
+    'allpreds_lasso' = 'LASSO Cox',
+    'allpreds_ElasticNet' = 'Elastic Net Cox'
+)
+
+predictor_label_vector <- c(
+  'AF_prevalent' = 'Atrial Fibrillation',
+  'sex_MaleTRUE' = 'Male Sex',
+  'bmi' = 'BMI',
+  'CAD_prevalent' = 'CAD',
+  'smoking_initiationTRUE' = 'Smoking Initiation',
+  'eGFR' = 'Estimated Glomerular\nFiltration Rate',
+  'T2D_prevalent' = 'Type 2 diabetes',
+  'dbp' = 'DBP',
+  'stroke_prevalent' = 'Stroke',
+  'HF_prevalent' = 'Heart Failure'
+)
+
+cov_preds <- c('sex_MaleTRUE')
+mr_preds <- c('bmi','dbp','HF_prevalent')
+nonmr_preds <- names(predictor_label_vector)[!names(predictor_label_vector) %in% c(cov_preds, mr_preds)]
+
+```
+
+## Plotting
+
+This provides summary plots comparing input data tibbles where each corresponds to a single model and compares them.
+This occurs across each of the 3 evaluation metrics: 
+ - Harrells
+ - UnosC (less biased version of C-index in the presence of high censoring) and 
+ - Time-dependent AUC (where each timepoint represents a single point).
+
+The C-indexes are a metric of model discrimination whereby they measure concordance between pairs of informative individuals (informative meaning that they can be compared e.g both have either known event times (suffered events or known to NOT have suffered event at that same time e.g A = diagnosed at 50Y vs. B = censored at 60Y is informative pair).
+Concordance means that the individual of the pair with higher predicted risk from the Cox model (i.e predicted score) actually had earlier incidence. The C-index then represents the fraction of concordant pairs/all informative pairs.
+
+The time-dependent AUC does a similar approach but more strictly compares the model's ability to discriminate at certain timepoints from those who have experienced the event by time t (case) vs. those who have not (but are/were still under follow-up by time t) (control). Here, the pairs are formed from one case and one control and the concordance index is computed.
+
+Note that AUC and C-index are intrinsically practically the same (https://towardsdatascience.com/get-an-intuition-for-auc-and-harrells-c-18df56220969/) as plotting the ROC curve involves ranking the samples by the predicted risk score and then checking whether that corresponds to ground truth (i.e true case or true control).
+
+The errorbars reflect the 95% confidence interval derived from the bootstrap distribution of validation-fold means C-indexes or AUCs.
+
+```{r}
+#' @title Plot Bootstrap Performance Metrics for Multiple Models
+#'
+#' @description
+#' This function takes a named list of tibbles, where each tibble contains
+#' bootstrap performance metrics for a model. It generates and saves three plots:
+#' two forest plots comparing Harrell's C and Uno's C, and one line plot
+#' comparing time-dependent AUCs.
+#'
+#' @param model_results A named list of tibbles. The name of each list element
+#'   is treated as the model name. Each tibble must contain the columns:
+#'   "Harrells_C", "Unos_C", and AUC columns like "AUC_50", "AUC_60", etc.
+#' @param output_folder A string specifying the path to the directory where the
+#'   plots will be saved. The directory will be created if it doesn't exist.
+#'
+#' @return The function saves three .png files to the output folder and prints
+#'   the plots. It invisibly returns a list containing the three ggplot objects.
+
+plot_bootstrap_performance <- function(model_results, palette, labels, output_name, output_folder='3_prediction/3_output/2_TTE_Analysis/UKB/bootstrap/plots/') {
+
+  # --- 1. Package and Input Checks ---
+  required_packages <- c("dplyr", "tidyr", "ggplot2", "stringr")
+  for (pkg in required_packages) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      stop(paste("Package '", pkg, "' is required but not installed. Please install it."), call. = FALSE)
+    }
+  }
+
+  if (!is.list(model_results) || is.null(names(model_results))) {
+    stop("`model_results` must be a named list of tibbles/data.frames.", call. = FALSE)
+  }
+
+  # --- 2. Setup ---
+  # Create the output directory if it does not exist
+  dir.create(output_folder, showWarnings = FALSE, recursive = TRUE)
+
+  # Combine all model tibbles into a single data frame with a model identifier
+  all_models_df <- dplyr::bind_rows(model_results, .id = "model_name")
+
+  # --- 3. Process C-indices for Forest Plots ---
+  c_index_summary <- all_models_df %>%
+    dplyr::select(model_name, Harrells_C, Unos_C) %>%
+    tidyr::pivot_longer(
+      cols = c(Harrells_C, Unos_C),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    dplyr::group_by(model_name, metric) %>%
+    dplyr::summarise(
+      mean = mean(value, na.rm = TRUE),
+      lower_ci = quantile(value, probs = 0.025, na.rm = TRUE),
+      upper_ci = quantile(value, probs = 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # --- 4. Generate Harrell's C and Uno's C Forest Plot ---
+    for (metric_C in c('Unos_C','Harrells_C')){
+        
+        plot_data <- c_index_summary %>% dplyr::filter(metric == metric_C)
+
+        plot <- ggplot(plot_data, aes(x = mean, y = stats::reorder(model_name, mean))) +
+        geom_errorbarh(aes(xmin = lower_ci, xmax = upper_ci), height = 0.1, linewidth = 0.8) +
+        geom_point(aes(fill=model_name),size = 4, shape = 23) +
+        scale_fill_manual(values=palette)+
+        scale_y_discrete(labels=labels)+
+        scale_x_continuous(limits = c(0.5, 1)) +
+        labs(
+        # title = str_glue("Model Comparison: {metric_C}"),
+        # subtitle = "Points represent mean C-index, error bars are the 95% bootstrap CI.",
+        x = ifelse(metric_C =='Harrells_C',"Harrell's C-index","Uno's C-index"),
+        y = "Model"
+        ) +
+        theme_classic(base_size = 14)+
+        theme(legend.position = 'none')
+
+    print(plot)
+    ggsave(
+        filename = file.path(output_folder, str_glue("forest_plot_{output_name}_{metric_C}_bootstrap.png")),
+        plot = plot,
+        width = 6,
+        height = 4,
+        dpi = 600
+    )
+    }
+
+  # --- 6. Process Time-dependent AUC for Line Plot ---
+  auc_summary <- all_models_df %>%
+    dplyr::select(model_name, dplyr::starts_with("AUC_")) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::starts_with("AUC_"),
+      names_to = "timepoint_raw",
+      values_to = "auc"
+    ) %>%
+    dplyr::mutate(
+      timepoint = as.numeric(stringr::str_extract(timepoint_raw, "\\d+"))
+    ) %>%
+    dplyr::group_by(model_name, timepoint) %>%
+    dplyr::summarise(
+      mean_auc = mean(auc, na.rm = TRUE),
+      lower_ci_auc = quantile(auc, probs = 0.025, na.rm = TRUE),
+      upper_ci_auc = quantile(auc, probs = 0.975, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+        drop_na(mean_auc)
+
+  # --- 7. Generate AUC Line Plot ---
+  plot_auc <- ggplot(auc_summary, aes(x = timepoint, y = mean_auc, group = model_name, color = model_name)) +
+    geom_line(linewidth = 1,alpha=0.65) +
+    geom_point(size = 3,alpha=0.65) +
+    geom_errorbar(aes(ymin = lower_ci_auc, ymax = upper_ci_auc), width = 0.8, linewidth = 0.6,alpha=0.65) +
+    geom_hline(yintercept=0.5, alpha=0.4, linetype='dashed',col='black')+
+    scale_x_continuous(breaks = unique(auc_summary$timepoint)) +
+    scale_y_continuous(limits = c(NA, 1)) +
+    scale_color_manual(values=palette, labels=labels)+
+    labs(
+      # title = "Time-Dependent AUC Comparison (50-80 Years)",
+      # subtitle = "Lines show mean AUC, error bars are the 95% bootstrap CI.",
+      x = "Timepoint (Years)",
+      y = "AUC",
+      color = "Model"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(legend.position = "bottom")
+
+  print(plot_auc)
+  ggsave(
+    filename = file.path(output_folder, str_glue("line_plot_{output_name}_AUC_bootstrap.png")),
+    plot = plot_auc,
+    width = 8,
+    height = 6,
+    dpi = 600
+  )
+
+  combo_plot <- plot / plot_auc
+  print(combo_plot)
+  ggsave(filename = file.path(output_folder, str_glue("combo_plot_{output_name}_bootstrap.png")),plot=combo_plot,
+  width=8, height=5,dpi=600)
+}
+```
+
+
+```{r}
+comp1 <- c('MRpreds_unreg','nonMRpreds_unreg', 'allpreds_unreg')
+comp2 <- c('allpreds_unreg','MRpreds_unreg','allpreds_ridge','allpreds_lasso','allpreds_ElasticNet')
+plot_bootstrap_performance(res[comp1], palette_vector, label_vector, 'comp1')
+plot_bootstrap_performance(res[comp2], palette_vector, label_vector, 'benchmark')
+```
+
+# Cox Regression Inference
+
+This performs inference on the trained weights from the Cox regression model (unregularised) trained on the entire UKB training set.
+
+First, I import in the coefs from the unregularised Cox regression across all 3 features sets by importing the .rds from the coxph() in R on UKB-RAP
+
+```{r}
+output_folder <- '3_prediction/3_output/2_TTE_Analysis/UKB/'
+cox_filenames <- list.files(output_folder, pattern = '\\.rds')
+model_names <- str_match(cox_filenames, '([^\\.]+)\\.rds')[,2]
+
+cox_models <- map(str_c(output_folder, cox_filenames, sep='/'), ~readRDS(.))
+names(cox_models) <- model_names
+```
+
+Plot the coefs from the allpreds as a forest plot.
+
+```{r}
+plot_df <- tidy(cox_models[['unreg_cox_allpreds']], exponentiate=T, conf.int=T) %>% #This converts the log(HR) into HR from the coefficient estimates
+    mutate(adj_pvalue = p.adjust(p.value, 'BH')) %>%
+    mutate(model_type = case_when(
+      term %in% mr_preds ~ 'MRpreds_unreg',
+      term %in% nonmr_preds ~ 'nonMRpreds_unreg',
+      term %in% cov_preds ~ 'cov_unreg'
+    ))
+
+#Setup a palette for the y-axis labels too
+palette_vector2 <- c(
+  'AF_prevalent' = '#d95f02',
+  'sex_MaleTRUE' = '#666666',
+  'bmi' = '#1b9e77',
+  'CAD_prevalent' = '#d95f02',
+  'smoking_initiationTRUE' = '#d95f02',
+  'eGFR' = '#d95f02',
+  'T2D_prevalent' = '#d95f02',
+  'dbp' = '#1b9e77',
+  'stroke_prevalent' = '#d95f02',
+  'HF_prevalent' = '#1b9e77'
+)
+
+plot_df <- plot_df %>%
+  mutate(term = fct_reorder(term, desc(p.value)))
+
+# 2. Create the ordered color vector based on the factor levels of our updated data frame.
+#    The order of `axis_colors` will now perfectly match the order of labels on the plot.
+axis_colors <- palette_vector2[levels(plot_df$term)]
+
+
+# --- Build the Plot (now simplified) ---
+# We no longer need to mutate/reorder inside the ggplot call.
+forest_plot <- ggplot(plot_df, aes(x = estimate, y = term)) +
+  geom_vline(xintercept = 1, linetype = 'dashed', alpha = 0.5) +
+  geom_point(size = 2, shape = 23, aes(fill = model_type)) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.5, linewidth = 0.5) +
+  scale_fill_manual(
+    name = 'Predictor Group',
+    values = palette_vector, 
+    labels = c('cov_unreg' = 'Covariate', 'MRpreds_unreg' = 'MR-prioritised Predictor', 'nonMRpreds_unreg' = 'Non-MR-prioritised Predictor')
+  ) +
+  xlab('Hazard Ratio per SD or Presence') +
+  ylab('Predictor') +
+  labs(
+    title = 'Relative feature importances for predictors in unregularised Cox regression of UK Biobank',
+    subtitle = '95% confidence intervals shown'
+  ) +
+  scale_y_discrete(labels = predictor_label_vector) + 
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = 'right',
+    axis.text.y = element_text(colour = axis_colors)
+  )
+
+print(forest_plot)
+ggsave(str_c(output_folder, 'unreg_cox_allpreds_forestplot.png'), dpi=600, height = 6, width=12)
+```
+
+### Cox Assumptions
+
+This tests the assumptions of the Cox regression model.
+
+#### Proportional Hazards Assumption
+
+This assumption implies the **HR measuring the effect of any predictor is constant over time**.
+
+1. Proportional Hazards assumption by testing for independence between the scaled Schoenfeld residual and the timescale.
+
+Each row represents the statistical test that the coefficient value does NOT change with respect to time (null hypothesis).
+However, you must take into account the multiple testing burden for the individual predictors.
+The GLOBAL row tests the null hypothesis that all the predictors do NOT meet the PH assumption.
+
+A non-significant result reflects that the null hypothesis is met i.e PH assumption is not invalidated.
+The plot of horizontal line in the plot should be flat to indicate that the assumption is met.
+
+
+```{r}
+ph_assumption_tester <- function(model, plot_output_path='', plot=T){
+    
+  ph_assumption_test <- cox.zph(model)
+  print(ph_assumption_test)
+
+if (isTRUE(plot)) {
+  # Get all variable names, excluding the last row ("GLOBAL")
+  vars_to_plot <- rownames(ph_assumption_test$table)[1:nrow(ph_assumption_test$table) - 1]
+  
+  # Use walk to iterate, create, print, and save
+    walk(
+    vars_to_plot,
+    ~ {
+      # 1. Create the plot and store it in a variable 'p'
+      p <- survminer::ggcoxzph(ph_assumption_test, var = .)
+      
+      # 2. (Optional) Print the plot to your R session's plot viewer
+      print(p) 
+      
+      # 3. Create the unique filename
+      file_name <- stringr::str_c(plot_output_path, as.character(.), '_ss.png')
+      
+      # 4. Save the plot 'p' to the file
+      ggsave(
+        filename = file_name,
+        dpi = 600,
+        width = 7, # It's good practice to set dimensions
+        height = 5
+      )
+    }
+  )
+}
+ 
+  return(ph_assumption_test)
+}
+
+ph_assumption_tester(cox_models[['unreg_cox_allpreds']], '3_prediction/3_output/2_TTE_Analysis/cox_assumptions/unreg_cox_allpred')
+```

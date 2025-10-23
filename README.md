@@ -1,6 +1,6 @@
 # Prioritising modifiable risk factors and biomarkers in hypertrophic cardiomyopathy: a Mendelian randomization approach
 
-**Authors:** Jonathan H Chana<sup>a,b</sup>, Christopher Grace<sup>a,b</sup>, Mohsen Mazidi<sup>c</sup>, Robert Clarke<sup>c</sup>, Hugh Watkins<sup>a,b</sup>, Anuj Goel<sup>a,b</sup>
+**Authors:** Jonathan H Chan<sup>a,b</sup>, Christopher Grace<sup>a,b</sup>, Mohsen Mazidi<sup>c</sup>, Robert Clarke<sup>c</sup>, Hugh Watkins<sup>a,b</sup>, Anuj Goel<sup>a,b</sup>
 
 **Affiliations:**
 * <sup>a</sup> Division of Cardiovascular Medicine, Radcliffe Department of Medicine, University of Oxford, UK

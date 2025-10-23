@@ -53,4 +53,8 @@ such phenotypes for causal association with HCM using Mendelian randomization (M
 * This process aided in the prioritization of modifiable risk factors like BMI and identified causality with plasma protein biomarkers such as NTproBNP.
 * Such genetic evidence, however, does not translate to stronger predictive utility for incident HCM disease.
 
+---
+
+# ASHG 2025 Annual Meeting Poster
+
 ![ASHG Poster](https://github.com/JonChan0/MultiPheno_HCM_MR/blob/main/docs/ASHG_Poster.png)

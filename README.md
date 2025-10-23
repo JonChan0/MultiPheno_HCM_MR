@@ -1,2 +1,2 @@
 # Prioritising modifiable risk factors and biomarkers in hypertrophic cardiomyopathy: a Mendelian randomization approach
-[![ASHG Poster](./docs/ASHG_Poster_D5.png)]
+[![ASHG Poster](https://github.com/JonChan0/MultiPheno_HCM_MR/blob/main/docs/ASHG_Poster_D5.png)]
